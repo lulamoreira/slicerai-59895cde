@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "SlicerAI — Gerador de .3mf para Bambu Studio" },
+      { name: "description", content: "Suba um STL, responda o wizard e baixe um .3mf pronto: geometria + presets de impressora, processo, filamento e suporte já embarcados." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "SlicerAI — Gerador de .3mf para Bambu Studio" },
+      { property: "og:description", content: "Suba um STL, responda o wizard e baixe um .3mf pronto: geometria + presets de impressora, processo, filamento e suporte já embarcados." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "SlicerAI — Gerador de .3mf para Bambu Studio" },
+      { name: "twitter:description", content: "Suba um STL, responda o wizard e baixe um .3mf pronto: geometria + presets de impressora, processo, filamento e suporte já embarcados." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/98410c0d-99d3-40a0-90bc-90c54bf5d204/id-preview-35c02e86--0035d641-7f1f-478e-a8ff-b261348fe690.lovable.app-1784894037552.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/98410c0d-99d3-40a0-90bc-90c54bf5d204/id-preview-35c02e86--0035d641-7f1f-478e-a8ff-b261348fe690.lovable.app-1784894037552.png" },
     ],
     links: [
       {
