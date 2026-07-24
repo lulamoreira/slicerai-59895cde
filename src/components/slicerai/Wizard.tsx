@@ -65,6 +65,7 @@ function initialState(): WizardState {
     overrides: {},
     supportMode: "auto",
     bed: "Textured PEI Plate",
+    ironing: { type: undefined, flow: "10%", spacing: "0.1", speed: "20" },
   };
 }
 
@@ -155,7 +156,15 @@ export function Wizard() {
   }, [state.chosenOrientationKey]);
 
   const [generating, setGenerating] = useState(false);
-  const [lastResult, setLastResult] = useState<{ url: string; fileName: string; summary: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    url: string;
+    fileName: string;
+    summary: string;
+    reportUrl: string;
+    reportFileName: string;
+    zipUrl: string;
+    zipFileName: string;
+  } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
   const onGenerate = useCallback(async () => {
@@ -164,7 +173,17 @@ export function Wizard() {
     try {
       const res = await generate3mfAsync(state);
       const url = URL.createObjectURL(res.blob);
-      setLastResult({ url, fileName: res.fileName, summary: res.summary });
+      const reportUrl = URL.createObjectURL(res.report.blob);
+      const zipUrl = URL.createObjectURL(res.zipBlob);
+      setLastResult({
+        url,
+        fileName: res.fileName,
+        summary: res.summary,
+        reportUrl,
+        reportFileName: res.report.fileName,
+        zipUrl,
+        zipFileName: res.zipFileName,
+      });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         createdAt: Date.now(),
@@ -178,7 +197,7 @@ export function Wizard() {
       };
       saveHistory(entry);
       setHistory(loadHistory());
-      toast.success(".3mf gerado com sucesso");
+      toast.success(".3mf + relatório gerados");
     } catch (e) {
       setGenError((e as Error).message);
       toast.error("Falha na geração");
@@ -674,13 +693,18 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
   const setOv = (k: string, v: string | undefined) =>
     onChange({ overrides: { ...state.overrides, [k]: v } });
 
+  const setIron = (patch: Partial<WizardState["ironing"]>) =>
+    onChange({ ironing: { ...state.ironing, ...patch } });
+
+  const effectiveType = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Sliders className="w-4 h-4" /> Avançado</CardTitle>
         <CardDescription>Overrides opcionais. Deixe em branco para usar os padrões do motor.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <Collapsible defaultOpen>
           <CollapsibleTrigger className="text-sm font-medium">Processo</CollapsibleTrigger>
           <CollapsibleContent className="grid grid-cols-2 gap-3 pt-3">
@@ -702,6 +726,60 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
             ))}
           </CollapsibleContent>
         </Collapsible>
+
+        <Separator />
+
+        <Collapsible defaultOpen={state.purpose === "decoracao"}>
+          <CollapsibleTrigger className="text-sm font-medium">
+            Ironing (alisar topo){state.purpose === "decoracao" && <span className="ml-2 text-xs text-primary">recomendado</span>}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 pt-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Modo</Label>
+              <Select
+                value={effectiveType}
+                onValueChange={(v) => setIron({ type: v as WizardState["ironing"]["type"] })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no ironing">Desligado</SelectItem>
+                  <SelectItem value="top">Top (todas as superfícies de topo)</SelectItem>
+                  <SelectItem value="topmost">Topmost (apenas última camada)</SelectItem>
+                  <SelectItem value="solid">Solid (todas as camadas sólidas)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Alisa superfícies planas de topo, removendo linhas de camada. Ideal para peças de display.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Fluxo</Label>
+                <Input value={state.ironing.flow} onChange={(e) => setIron({ flow: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Spacing (mm)</Label>
+                <Input value={state.ironing.spacing} onChange={(e) => setIron({ spacing: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Velocidade</Label>
+                <Input value={state.ironing.speed} onChange={(e) => setIron({ speed: e.target.value })} />
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {state.purpose === "decoracao" && (
+          <Alert>
+            <AlertTriangle className="w-4 h-4" />
+            <AlertTitle className="text-sm">Variable Layer Height é passo manual</AlertTitle>
+            <AlertDescription className="text-xs">
+              O perfil "Adaptive" depende da geometria e não é embarcado no .3mf.
+              O relatório <code>_LEIA-ME.txt</code> gerado junto explica como
+              aplicar em 30 segundos no Bambu Studio.
+            </AlertDescription>
+          </Alert>
+        )}
       </CardContent>
     </Card>
   );
@@ -713,15 +791,24 @@ function StepGenerate({
   state: WizardState;
   generating: boolean;
   genError: string | null;
-  lastResult: { url: string; fileName: string; summary: string } | null;
+  lastResult: {
+    url: string;
+    fileName: string;
+    summary: string;
+    reportUrl: string;
+    reportFileName: string;
+    zipUrl: string;
+    zipFileName: string;
+  } | null;
   onGenerate: () => void;
   onExportJson: () => void;
 }) {
+  const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Gerar .3mf</CardTitle>
-        <CardDescription>Validação anti-crash antes do download.</CardDescription>
+        <CardDescription>Validação anti-crash antes do download. Gera .3mf + relatório .txt.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
@@ -729,12 +816,13 @@ function StepGenerate({
           <div><strong>Material:</strong> {state.material?.label ?? "—"} · {state.color}</div>
           <div><strong>Finalidade:</strong> {state.purpose ?? "—"}</div>
           <div><strong>Suporte:</strong> {state.supportMode}</div>
+          <div><strong>Ironing:</strong> {effectiveIroning}</div>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button onClick={onGenerate} disabled={generating}>
             <Download className="w-4 h-4 mr-2" />
-            {generating ? "Gerando..." : "Gerar .3mf"}
+            {generating ? "Gerando..." : "Gerar .3mf + relatório"}
           </Button>
           <Button variant="outline" onClick={onExportJson}>
             <FileJson className="w-4 h-4 mr-2" /> Exportar presets (.json)
@@ -753,15 +841,25 @@ function StepGenerate({
 
         {lastResult && (
           <div className="space-y-2 rounded-lg border border-border p-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button asChild size="sm">
                 <a href={lastResult.url} download={lastResult.fileName}>
-                  <Download className="w-4 h-4 mr-2" /> Baixar {lastResult.fileName}
+                  <Download className="w-4 h-4 mr-2" /> Baixar .3mf
+                </a>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={lastResult.reportUrl} download={lastResult.reportFileName}>
+                  <Download className="w-4 h-4 mr-2" /> Baixar relatório (.txt)
+                </a>
+              </Button>
+              <Button asChild size="sm" variant="secondary">
+                <a href={lastResult.zipUrl} download={lastResult.zipFileName}>
+                  <Download className="w-4 h-4 mr-2" /> Baixar ambos (.zip)
                 </a>
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 onClick={() => {
                   navigator.clipboard.writeText(lastResult.summary);
                   toast.success("Resumo copiado");
@@ -769,6 +867,9 @@ function StepGenerate({
               >
                 <Copy className="w-4 h-4 mr-2" /> Copiar resumo
               </Button>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Arquivos: <span className="font-mono">{lastResult.fileName}</span> · <span className="font-mono">{lastResult.reportFileName}</span>
             </div>
             <ScrollArea className="h-40 w-full rounded border border-border p-2">
               <pre className="text-xs whitespace-pre-wrap font-mono">{lastResult.summary}</pre>
