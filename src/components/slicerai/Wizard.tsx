@@ -185,8 +185,6 @@ export function Wizard() {
     summary: string;
     reportUrl: string;
     reportFileName: string;
-    zipUrl: string;
-    zipFileName: string;
   } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -197,18 +195,16 @@ export function Wizard() {
       const res = await generate3mfAsync(state);
       const url = URL.createObjectURL(res.blob);
       const reportUrl = URL.createObjectURL(res.report.blob);
-      const zipUrl = URL.createObjectURL(res.zipBlob);
       setLastResult({
         url,
         fileName: res.fileName,
         summary: res.summary,
         reportUrl,
         reportFileName: res.report.fileName,
-        zipUrl,
-        zipFileName: res.zipFileName,
       });
+      const id = crypto.randomUUID();
       const entry: HistoryEntry = {
-        id: crypto.randomUUID(),
+        id,
         createdAt: Date.now(),
         fileName: state.mesh!.fileName,
         printerId: state.printer!.id,
@@ -217,7 +213,17 @@ export function Wizard() {
         color: state.color,
         supportMode: state.supportMode,
         settingsJson: JSON.stringify(res.settings),
+        bed: state.bed,
+        centerOnBed: state.centerOnBed,
+        chosenOrientationKey: state.chosenOrientationKey,
+        overrides: state.overrides,
+        ironing: state.ironing,
+        outputFileName: res.fileName,
       };
+      // Persist original STL bytes for reuse from history
+      try {
+        await putStl(id, state.mesh!.sourceBuffer ?? new ArrayBuffer(0));
+      } catch { /* ignore */ }
       saveHistory(entry);
       setHistory(loadHistory());
       toast.success(".3mf + relatório gerados");
@@ -228,6 +234,7 @@ export function Wizard() {
       setGenerating(false);
     }
   }, [state]);
+
 
   const canNext = useMemo(() => {
     switch (step) {
