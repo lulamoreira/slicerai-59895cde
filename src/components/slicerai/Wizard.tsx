@@ -26,10 +26,11 @@ import {
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
 import { generate3mfAsync } from "@/lib/slicerai/threemf";
-import { loadHistory, saveHistory } from "@/lib/slicerai/storage";
+import { loadHistory, saveHistory, putStl, getStl } from "@/lib/slicerai/storage";
 import type {
   HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
 } from "@/lib/slicerai/types";
+
 
 const STEPS = [
   { id: 1, label: "STL", icon: Upload },
@@ -184,8 +185,6 @@ export function Wizard() {
     summary: string;
     reportUrl: string;
     reportFileName: string;
-    zipUrl: string;
-    zipFileName: string;
   } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -196,18 +195,16 @@ export function Wizard() {
       const res = await generate3mfAsync(state);
       const url = URL.createObjectURL(res.blob);
       const reportUrl = URL.createObjectURL(res.report.blob);
-      const zipUrl = URL.createObjectURL(res.zipBlob);
       setLastResult({
         url,
         fileName: res.fileName,
         summary: res.summary,
         reportUrl,
         reportFileName: res.report.fileName,
-        zipUrl,
-        zipFileName: res.zipFileName,
       });
+      const id = crypto.randomUUID();
       const entry: HistoryEntry = {
-        id: crypto.randomUUID(),
+        id,
         createdAt: Date.now(),
         fileName: state.mesh!.fileName,
         printerId: state.printer!.id,
@@ -216,7 +213,17 @@ export function Wizard() {
         color: state.color,
         supportMode: state.supportMode,
         settingsJson: JSON.stringify(res.settings),
+        bed: state.bed,
+        centerOnBed: state.centerOnBed,
+        chosenOrientationKey: state.chosenOrientationKey,
+        overrides: state.overrides,
+        ironing: state.ironing,
+        outputFileName: res.fileName,
       };
+      // Persist original STL bytes for reuse from history
+      try {
+        await putStl(id, state.mesh!.sourceBuffer ?? new ArrayBuffer(0));
+      } catch { /* ignore */ }
       saveHistory(entry);
       setHistory(loadHistory());
       toast.success(".3mf + relatório gerados");
@@ -227,6 +234,7 @@ export function Wizard() {
       setGenerating(false);
     }
   }, [state]);
+
 
   const canNext = useMemo(() => {
     switch (step) {
@@ -344,11 +352,20 @@ export function Wizard() {
                   Próxima
                 </Button>
               ) : (
-                <Button onClick={onGenerate} disabled={generating}>
-                  {generating ? "Gerando..." : "Gerar .3mf"}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setState(initialState());
+                    setLastResult(null);
+                    setGenError(null);
+                    setStep(1);
+                  }}
+                >
+                  Recomeçar
                 </Button>
               )}
             </div>
+
           </div>
 
           <div className="space-y-3">
@@ -385,12 +402,56 @@ export function Wizard() {
             </Card>
             {step >= 5 && <LegendChip analysis={state.analysis} />}
 
-            <HistoryCard history={history} onReuse={(entry) => {
+            <HistoryCard history={history} onReuse={async (entry) => {
               const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
               const m = MATERIALS.find((x) => x.id === entry.materialId) ?? state.material;
-              patch({ printer: p, material: m, purpose: entry.purpose, color: entry.color, supportMode: entry.supportMode as WizardState["supportMode"] });
-              toast.success("Configurações do histórico aplicadas");
+              let mesh: STLMesh | null = null;
+              try {
+                const buf = await getStl(entry.id);
+                if (buf) {
+                  const file = new File([buf], entry.fileName, { type: "model/stl" });
+                  mesh = await parseSTL(file);
+                }
+              } catch { /* ignore */ }
+
+              const patchState: Partial<WizardState> = {
+                printer: p,
+                material: m,
+                purpose: entry.purpose,
+                color: entry.color,
+                supportMode: entry.supportMode as WizardState["supportMode"],
+                bed: entry.bed ?? state.bed,
+                centerOnBed: entry.centerOnBed ?? state.centerOnBed,
+                overrides: entry.overrides ?? {},
+                ironing: entry.ironing ?? state.ironing,
+                chosenOrientationKey: entry.chosenOrientationKey ?? "original",
+              };
+              if (mesh) {
+                patchState.mesh = mesh;
+                patchState.analysis = null;
+                patchState.orientations = [];
+              }
+              patch(patchState);
+
+              if (mesh && p && m) {
+                try {
+                  const orientations = analyzeAllOrientations(mesh, m, p.bed);
+                  const key = entry.chosenOrientationKey ?? "original";
+                  const chosen = orientations.find((o) => o.key === key) ?? orientations[0];
+                  let a = chosen.analysis;
+                  if (a.needsSupport && purposeToTreePreference(entry.purpose) && a.suggestedType !== "tree") {
+                    a = { ...a, suggestedType: "tree", reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)" };
+                  }
+                  patch({ orientations, chosenOrientationKey: chosen.key, analysis: a });
+                } catch { /* ignore */ }
+                setStep(7);
+                toast.success("Histórico restaurado — pronto para gerar");
+              } else {
+                toast.warning("Modelo não encontrado, faça upload novamente");
+                setStep(1);
+              }
             }} />
+
           </div>
         </div>
       </div>
@@ -811,8 +872,6 @@ function StepGenerate({
     summary: string;
     reportUrl: string;
     reportFileName: string;
-    zipUrl: string;
-    zipFileName: string;
   } | null;
   onGenerate: () => void;
 
@@ -821,8 +880,8 @@ function StepGenerate({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Gerar .3mf</CardTitle>
-        <CardDescription>Validação anti-crash antes do download. Gera .3mf + relatório .txt.</CardDescription>
+        <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Revisar e gerar</CardTitle>
+        <CardDescription>Validação anti-crash antes do download. O relatório .txt é criado junto.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
@@ -836,7 +895,7 @@ function StepGenerate({
         <div className="flex flex-wrap gap-2">
           <Button onClick={onGenerate} disabled={generating}>
             <Download className="w-4 h-4 mr-2" />
-            {generating ? "Gerando..." : "Gerar .3mf + relatório"}
+            {generating ? "Gerando..." : "Gerar .3mf"}
           </Button>
         </div>
 
@@ -863,11 +922,6 @@ function StepGenerate({
                   <Download className="w-4 h-4 mr-2" /> Baixar relatório (.txt)
                 </a>
               </Button>
-              <Button asChild size="sm" variant="secondary">
-                <a href={lastResult.zipUrl} download={lastResult.zipFileName}>
-                  <Download className="w-4 h-4 mr-2" /> Baixar ambos (.zip)
-                </a>
-              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -892,6 +946,7 @@ function StepGenerate({
   );
 }
 
+
 function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (h: HistoryEntry) => void }) {
   if (history.length === 0) return null;
   return (
@@ -910,7 +965,7 @@ function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (
               >
                 <span className="truncate">
                   <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: h.color }} />
-                  {h.fileName} · {h.materialId} · {h.purpose}
+                  {h.outputFileName ?? h.fileName} · {h.materialId} · {h.purpose}
                 </span>
                 <span className="text-muted-foreground shrink-0">
                   {new Date(h.createdAt).toLocaleDateString("pt-BR")}

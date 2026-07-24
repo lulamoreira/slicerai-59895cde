@@ -7,7 +7,9 @@ export interface STLMesh {
   bbox: { min: Vec3; max: Vec3; size: Vec3 };
   volumeMm3: number;
   fileName: string;
+  sourceBuffer?: ArrayBuffer; // original STL bytes, kept in memory for reuse (history)
 }
+
 
 export interface Printer {
   id: string; // printer_settings_id, ex: "Bambu Lab A1 0.4 nozzle"
@@ -94,4 +96,17 @@ export interface HistoryEntry {
   color: string;
   supportMode: string;
   settingsJson: string; // to allow "regerar"
+  // Full restore fields (optional for backward compat with older entries)
+  bed?: string;
+  centerOnBed?: boolean;
+  chosenOrientationKey?: string;
+  overrides?: Partial<Record<string, string>>;
+  ironing?: {
+    type?: "no ironing" | "top" | "topmost" | "solid";
+    flow: string;
+    spacing: string;
+    speed: string;
+  };
+  outputFileName?: string; // final .3mf name for display
 }
+
