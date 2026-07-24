@@ -384,6 +384,7 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
     errors,
     warnings,
   };
+}
 
 export async function generate3mfAsync(state: WizardState): Promise<GenerateResult> {
   if (!state.mesh || !state.printer || !state.material || !state.purpose) {
