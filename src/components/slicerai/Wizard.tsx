@@ -65,6 +65,7 @@ function initialState(): WizardState {
     overrides: {},
     supportMode: "auto",
     bed: "Textured PEI Plate",
+    ironing: { type: undefined, flow: "10%", spacing: "0.1", speed: "20" },
   };
 }
 
