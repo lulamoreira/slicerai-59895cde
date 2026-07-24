@@ -5,6 +5,14 @@ import { purposeProfile, supportConfig, type SupportConfig } from "./rules";
 import { resolveChain } from "./resolve";
 
 const VERSION = "02.07.01.62";
+const BAMBUSTUDIO_APPLICATION = `BambuStudio-${VERSION}`;
+const BBS_3MF_VERSION = "1";
+const MODEL_OBJECT_UUID = "00000000-0000-0000-0000-000000000001";
+const BUILD_ITEM_UUID = "00000000-0000-0000-0000-000000000002";
+const BUILD_UUID = "00000000-0000-0000-0000-00000000000A";
+const PART_UUID = "00000000-0000-0000-0000-000000000101";
+const IDENTITY_3MF_TRANSFORM = "1 0 0 0 1 0 0 0 1 0 0 0";
+const IDENTITY_4X4_MATRIX = "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
 
 function xmlEscape(s: string): string {
   return s
@@ -80,17 +88,19 @@ function build3dmodelXml(mesh: { positions: Float32Array; indices: Uint32Array }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
- <metadata name="Application">SlicerAI</metadata>
+ <metadata name="Application">${BAMBUSTUDIO_APPLICATION}</metadata>
+ <metadata name="BambuStudio:3mfVersion">${BBS_3MF_VERSION}</metadata>
+ <metadata name="model_id">slicerai-client-side</metadata>
  <resources>
-  <object id="1" p:UUID="00000000-0000-0000-0000-000000000001" type="model">
+  <object id="1" p:UUID="${MODEL_OBJECT_UUID}" type="model">
    <mesh>
 ${vertLines.join("\n")}
 ${triLines.join("\n")}
    </mesh>
   </object>
  </resources>
- <build p:UUID="00000000-0000-0000-0000-00000000000A">
-  <item objectid="1" p:UUID="00000000-0000-0000-0000-000000000002" transform="1 0 0 0 1 0 0 0 1 0 0 0" printable="1"/>
+  <build p:UUID="${BUILD_UUID}">
+   <item objectid="1" p:UUID="${BUILD_ITEM_UUID}" transform="${IDENTITY_3MF_TRANSFORM}" printable="1"/>
  </build>
 </model>`;
 }
@@ -242,6 +252,10 @@ async function assembleCfg(
   cfg.printer_settings_id = printer.id;
   cfg.print_settings_id = processLeaf;
   cfg.filament_settings_id = [filamentLeaf];
+  cfg.default_print_profile = processLeaf;
+  cfg.default_filament_profile = [filamentLeaf];
+  cfg.default_printer_model_id = printer.modelId;
+  cfg.printer_model_id = printer.modelId;
   cfg.nozzle_diameter = [printer.printerVariant];
   cfg.curr_bed_type = bed;
   cfg.filament_colour = [state.color.toUpperCase()];
@@ -262,8 +276,22 @@ function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[]
   for (const bad of ["type", "inherits", "setting_id", "instantiation"]) {
     if (bad in cfg) errors.push(`cfg contém chave proibida: ${bad}`);
   }
-  for (const req of ["printer_settings_id", "print_settings_id", "filament_settings_id", "nozzle_diameter", "curr_bed_type", "filament_colour"]) {
+  for (const req of [
+    "printer_settings_id",
+    "print_settings_id",
+    "filament_settings_id",
+    "default_print_profile",
+    "default_filament_profile",
+    "default_printer_model_id",
+    "printer_model_id",
+    "nozzle_diameter",
+    "curr_bed_type",
+    "filament_colour",
+  ]) {
     if (!(req in cfg)) errors.push(`cfg sem chave obrigatória: ${req}`);
+  }
+  if (state.printer && cfg.default_printer_model_id !== state.printer.modelId) {
+    errors.push(`default_printer_model_id incompatível: esperado ${state.printer.modelId}.`);
   }
   if (!Array.isArray(cfg.filament_colour) || (cfg.filament_colour as unknown[]).length === 0) {
     errors.push("filament_colour ausente.");
@@ -282,7 +310,66 @@ function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[]
   return errors;
 }
 
-function validatePlate1(json: string): string[] {
+function buildPlate1Json(printer: Printer, state: WizardState, processLeaf: string, filamentLeaf: string): string {
+  return JSON.stringify({
+    version: 2,
+    nozzle_diameter: parseFloat(printer.printerVariant),
+    printer_model_id: printer.modelId,
+    printer_settings_id: printer.id,
+    print_settings_id: processLeaf,
+    filament_settings_id: [filamentLeaf],
+    curr_bed_type: state.bed,
+    object_count: 1,
+  });
+}
+
+function buildModelSettingsXml(state: WizardState, printer: Printer): string {
+  const safeName = xmlEscape(state.mesh?.fileName ?? "modelo.stl");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="1">
+    <metadata key="name" value="${safeName}"/>
+    <metadata key="extruder" value="1"/>
+    <metadata face_count="${state.mesh?.triCount ?? 0}"/>
+    <part id="1" subtype="normal_part" uuid="${PART_UUID}">
+      <metadata key="name" value="${safeName}"/>
+      <metadata key="matrix" value="${IDENTITY_4X4_MATRIX}"/>
+      <mesh_stat face_count="${state.mesh?.triCount ?? 0}" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
+    </part>
+  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value="Plate 1"/>
+    <metadata key="locked" value="false"/>
+    <metadata key="bed_type" value="${xmlEscape(state.bed)}"/>
+    <metadata key="printer_model_id" value="${xmlEscape(printer.modelId)}"/>
+    <metadata key="nozzle_diameters" value="${xmlEscape(printer.printerVariant)}"/>
+    <model_instance>
+      <metadata key="object_id" value="1"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="1"/>
+    </model_instance>
+  </plate>
+</config>`;
+}
+
+function buildSliceInfoXml(printer: Printer, state: WizardState): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <header>
+    <header_item key="X-BBL-Client-Type" value="slicer"/>
+    <header_item key="X-BBL-Client-Version" value="${VERSION}"/>
+  </header>
+  <plate>
+    <metadata key="index" value="1"/>
+    <metadata key="printer_model_id" value="${xmlEscape(printer.modelId)}"/>
+    <metadata key="nozzle_diameters" value="${xmlEscape(printer.printerVariant)}"/>
+    <metadata key="support_used" value="${state.supportMode === "off" ? "false" : "true"}"/>
+  </plate>
+</config>`;
+}
+
+function validatePlate1(json: string, state?: WizardState): string[] {
   const errors: string[] = [];
   try {
     const p = JSON.parse(json) as Record<string, unknown>;
@@ -290,8 +377,66 @@ function validatePlate1(json: string): string[] {
       errors.push("plate_1.json: nozzle_diameter inválido.");
     }
     if (p.version !== 2) errors.push("plate_1.json: version deve ser 2.");
+    if (state?.printer && p.printer_model_id !== state.printer.modelId) {
+      errors.push("plate_1.json: printer_model_id não corresponde à impressora selecionada.");
+    }
+    if (state?.printer && p.printer_settings_id !== state.printer.id) {
+      errors.push("plate_1.json: printer_settings_id não corresponde à impressora selecionada.");
+    }
+    if (state?.bed && p.curr_bed_type !== state.bed) {
+      errors.push("plate_1.json: curr_bed_type não corresponde à placa selecionada.");
+    }
   } catch {
     errors.push("plate_1.json: JSON inválido.");
+  }
+  return errors;
+}
+
+function validateModelXml(xml: string): string[] {
+  const errors: string[] = [];
+  if (!xml.includes(`<metadata name="Application">${BAMBUSTUDIO_APPLICATION}</metadata>`)) {
+    errors.push(`3D/3dmodel.model: Application deve ser "${BAMBUSTUDIO_APPLICATION}" para o Bambu Studio carregar configurações.`);
+  }
+  if (!xml.includes(`<metadata name="BambuStudio:3mfVersion">${BBS_3MF_VERSION}</metadata>`)) {
+    errors.push("3D/3dmodel.model: falta metadata BambuStudio:3mfVersion=1.");
+  }
+  if (!xml.includes("xmlns:BambuStudio=\"http://schemas.bambulab.com/package/2021\"")) {
+    errors.push("3D/3dmodel.model: namespace BambuStudio ausente.");
+  }
+  if (!xml.includes("<build") || !xml.includes("<item objectid=\"1\"")) {
+    errors.push("3D/3dmodel.model: build/item da peça ausente.");
+  }
+  return errors;
+}
+
+function validateModelSettings(xml: string, state: WizardState): string[] {
+  const errors: string[] = [];
+  if (!xml.includes("<object id=\"1\">")) errors.push("model_settings.config: object id=1 ausente.");
+  if (!xml.includes("<part id=\"1\" subtype=\"normal_part\"")) errors.push("model_settings.config: part normal_part ausente.");
+  if (!xml.includes("<plate>")) errors.push("model_settings.config: plate ausente.");
+  if (!xml.includes("<model_instance>")) errors.push("model_settings.config: model_instance ausente.");
+  if (!xml.includes('key="object_id" value="1"') || !xml.includes('key="instance_id" value="0"')) {
+    errors.push("model_settings.config: vínculo plate → object/instance ausente.");
+  }
+  if (state.printer && !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)) {
+    errors.push("model_settings.config: printer_model_id da placa ausente.");
+  }
+  if (!xml.includes(`key="bed_type" value="${xmlEscape(state.bed)}"`)) {
+    errors.push("model_settings.config: bed_type da placa ausente.");
+  }
+  return errors;
+}
+
+function validateSliceInfo(xml: string, state: WizardState): string[] {
+  const errors: string[] = [];
+  if (!xml.includes('header_item key="X-BBL-Client-Type" value="slicer"')) {
+    errors.push("slice_info.config: header X-BBL-Client-Type ausente.");
+  }
+  if (state.printer && !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)) {
+    errors.push("slice_info.config: printer_model_id ausente.");
+  }
+  if (state.printer && !xml.includes(`key="nozzle_diameters" value="${xmlEscape(state.printer.printerVariant)}"`)) {
+    errors.push("slice_info.config: nozzle_diameters ausente.");
   }
   return errors;
 }
@@ -303,6 +448,9 @@ export interface ValidationReport {
   dssSlots: { process: string[]; filament: string[]; printer: string[]; length: number };
   plateOk: boolean;
   plateInfo: { nozzle: number; version: number } | null;
+  modelMetadataOk: boolean;
+  modelSettingsOk: boolean;
+  sliceInfoOk: boolean;
   processLeaf: string | null;
   filamentLeaf: string | null;
   errors: string[];
@@ -317,6 +465,9 @@ function emptyReport(errors: string[], warnings: string[] = [], needsSync = fals
     dssSlots: { process: [], filament: [], printer: [], length: 0 },
     plateOk: false,
     plateInfo: null,
+    modelMetadataOk: false,
+    modelSettingsOk: false,
+    sliceInfoOk: false,
     processLeaf: null,
     filamentLeaf: null,
     errors,
@@ -349,8 +500,15 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
   }
 
   const cfgErrors = validateCfg(cfg, state);
-  const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(state.printer.printerVariant), version: 2 });
-  const plateErrors = validatePlate1(plate1);
+  const previewMesh = transformMesh(state.mesh, [0, 0, 0], state.centerOnBed, state.printer);
+  const modelXml = build3dmodelXml(previewMesh);
+  const modelSettings = buildModelSettingsXml(state, state.printer);
+  const sliceInfo = buildSliceInfoXml(state.printer, state);
+  const plate1 = buildPlate1Json(state.printer, state, processLeaf, filamentLeaf);
+  const modelErrors = validateModelXml(modelXml);
+  const modelSettingsErrors = validateModelSettings(modelSettings, state);
+  const sliceInfoErrors = validateSliceInfo(sliceInfo, state);
+  const plateErrors = validatePlate1(plate1, state);
 
   const dssRaw = cfg.different_settings_to_system;
   const dssArr = Array.isArray(dssRaw) ? (dssRaw as unknown[]).map((s) => (typeof s === "string" ? s : "")) : [];
@@ -370,7 +528,7 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
   }
 
   const needsSync = cfgErrors.some((e) => /incompleto|Aprender com o GitHub/.test(e));
-  const errors = [...cfgErrors, ...plateErrors];
+  const errors = [...cfgErrors, ...modelErrors, ...modelSettingsErrors, ...sliceInfoErrors, ...plateErrors];
 
   return {
     ok: errors.length === 0,
@@ -379,6 +537,9 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
     dssSlots,
     plateOk: plateErrors.length === 0,
     plateInfo,
+    modelMetadataOk: modelErrors.length === 0,
+    modelSettingsOk: modelSettingsErrors.length === 0,
+    sliceInfoOk: sliceInfoErrors.length === 0,
     processLeaf,
     filamentLeaf,
     errors,
@@ -412,30 +573,17 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
   const modelXml = build3dmodelXml(transformed);
   if (modelXml.includes(",")) throw new Error("Vírgula decimal detectada no mesh — abortando.");
 
-  const modelSettings = `<?xml version="1.0" encoding="UTF-8"?>
-<config>
- <object id="1">
-  <metadata key="name" value="${xmlEscape(state.mesh.fileName)}"/>
-  <metadata key="extruder" value="1"/>
- </object>
-</config>`;
-  const sliceInfo = `<?xml version="1.0" encoding="UTF-8"?>
-<config>
- <header>
-  <header_item key="X-BBL-Client-Type" value="slicer"/>
-  <header_item key="X-BBL-Client-Version" value="${VERSION}"/>
- </header>
- <plate>
-  <metadata key="index" value="1"/>
-  <metadata key="printer_model_id" value="${xmlEscape(printer.modelId)}"/>
-  <metadata key="nozzle_diameters" value="${xmlEscape(printer.printerVariant)}"/>
- </plate>
-</config>`;
+  const modelSettings = buildModelSettingsXml(state, printer);
+  const sliceInfo = buildSliceInfoXml(printer, state);
+  const plate1 = buildPlate1Json(printer, state, processLeaf, filamentLeaf);
 
-  const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(printer.printerVariant), version: 2 });
-
-  const plateErrors = validatePlate1(plate1);
-  if (plateErrors.length) throw new Error(`Validação falhou:\n- ${plateErrors.join("\n- ")}`);
+  const metadataErrors = [
+    ...validateModelXml(modelXml),
+    ...validateModelSettings(modelSettings, state),
+    ...validateSliceInfo(sliceInfo, state),
+    ...validatePlate1(plate1, state),
+  ];
+  if (metadataErrors.length) throw new Error(`Validação falhou:\n- ${metadataErrors.join("\n- ")}`);
 
   const zip = new JSZip();
   zip.file("[Content_Types].xml", CONTENT_TYPES);

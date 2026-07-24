@@ -191,6 +191,12 @@ export function Wizard() {
 
   const onGenerate = useCallback(async () => {
     setGenError(null);
+    const { mesh, printer, material, purpose } = state;
+    if (!mesh || !printer || !material || !purpose) {
+      setGenError("Complete STL, impressora, material e finalidade antes de gerar.");
+      toast.error("Estado incompleto para geração");
+      return;
+    }
     setGenerating(true);
     try {
       const res = await generate3mfAsync(state);
@@ -207,10 +213,10 @@ export function Wizard() {
       const entry: HistoryEntry = {
         id,
         createdAt: Date.now(),
-        fileName: state.mesh!.fileName,
-        printerId: state.printer!.id,
-        materialId: state.material!.id,
-        purpose: state.purpose!,
+        fileName: mesh.fileName,
+        printerId: printer.id,
+        materialId: material.id,
+        purpose,
         color: state.color,
         supportMode: state.supportMode,
         settingsJson: JSON.stringify(res.settings),
@@ -223,7 +229,7 @@ export function Wizard() {
       };
       // Persist original STL bytes for reuse from history
       try {
-        await putStl(id, state.mesh!.sourceBuffer ?? new ArrayBuffer(0));
+        await putStl(id, mesh.sourceBuffer ?? new ArrayBuffer(0));
       } catch { /* ignore */ }
       saveHistory(entry);
       setHistory(loadHistory());
@@ -248,7 +254,9 @@ export function Wizard() {
       setValidation({
         ok: false, needsSync: false, keyCount: 0,
         dssSlots: { process: [], filament: [], printer: [], length: 0 },
-        plateOk: false, plateInfo: null, processLeaf: null, filamentLeaf: null,
+        plateOk: false, plateInfo: null,
+        modelMetadataOk: false, modelSettingsOk: false, sliceInfoOk: false,
+        processLeaf: null, filamentLeaf: null,
         errors: [(e as Error).message], warnings: [],
       });
     } finally {
@@ -1100,6 +1108,21 @@ function ValidationSummary({
           ok={report.plateOk}
           label="Metadata/plate_1.json íntegro"
           detail={report.plateInfo ? `nozzle_diameter=${report.plateInfo.nozzle} · version=${report.plateInfo.version}` : "JSON ausente ou inválido."}
+        />
+        <Item
+          ok={report.modelMetadataOk}
+          label="3D/3dmodel.model reconhecido como projeto Bambu"
+          detail="Application BambuStudio, BambuStudio:3mfVersion e build/item presentes."
+        />
+        <Item
+          ok={report.modelSettingsOk}
+          label="Metadata/model_settings.config vincula peça e placa"
+          detail="object, part normal_part, plate e model_instance presentes."
+        />
+        <Item
+          ok={report.sliceInfoOk}
+          label="Metadata/slice_info.config consistente"
+          detail="Cabeçalhos do slicer, impressora e bico conferidos."
         />
       </ul>
 
