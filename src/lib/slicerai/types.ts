@@ -74,6 +74,12 @@ export interface WizardState {
   overrides: Partial<Record<string, string>>;
   supportMode: "auto" | "normal" | "tree" | "off";
   bed: string; // curr_bed_type
+  ironing: {
+    type?: "no ironing" | "top" | "topmost" | "solid"; // undefined = auto by purpose
+    flow: string;    // e.g. "10%"
+    spacing: string; // e.g. "0.1"
+    speed: string;   // e.g. "20"
+  };
 }
 
 export interface HistoryEntry {
