@@ -235,7 +235,8 @@ function assemble(
     compatible_printers: [printer.id],
 
     nozzle_temperature: [String(material.nozzle)],
-    nozzle_temperature_initial_layer: [String(material.nozzle)],
+    nozzle_temperature_initial_layer: [String(material.nozzleInitial ?? material.nozzle)],
+
     hot_plate_temp: [String(material.bed)],
     hot_plate_temp_initial_layer: [String(material.bed)],
     filament_max_volumetric_speed: [String(material.volSpeed)],
