@@ -94,4 +94,17 @@ export interface HistoryEntry {
   color: string;
   supportMode: string;
   settingsJson: string; // to allow "regerar"
+  // Full restore fields (optional for backward compat with older entries)
+  bed?: string;
+  centerOnBed?: boolean;
+  chosenOrientationKey?: string;
+  overrides?: Partial<Record<string, string>>;
+  ironing?: {
+    type?: "no ironing" | "top" | "topmost" | "solid";
+    flow: string;
+    spacing: string;
+    speed: string;
+  };
+  outputFileName?: string; // final .3mf name for display
 }
+
