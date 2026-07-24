@@ -25,7 +25,8 @@ export interface MaterialBase {
   label: string;
   filamentId: string; // GFA00 etc
   inheritsBaseName: string; // "Bambu <X> @BBL <suffix>" prefix (before suffix)
-  nozzle: number; // 1st layer nozzle
+  nozzle: number; // nozzle temp (subsequent layers)
+  nozzleInitial?: number; // nozzle temp on 1st layer (defaults to nozzle if omitted)
   bed: number;
   volSpeed: number;
   flow: number;
@@ -35,6 +36,7 @@ export interface MaterialBase {
   filamentType: string; // "PLA", "PETG", "ABS", "ASA", "TPU", "PA", "PLA-CF", "PETG-CF"
   open?: boolean; // needs enclosure warning if opened
 }
+
 
 export type Purpose = "decoracao" | "mecanica" | "miniatura" | "prototipo" | "flexivel";
 
