@@ -418,6 +418,3 @@ export function exportPresetsJson(state: WizardState): Blob {
   const built = stringifyAllSet(assemble(state, printer, material, sup, state.bed));
   return new Blob([JSON.stringify(built, null, 2)], { type: "application/json" });
 }
-
-// Silence unused warnings for exported helpers
-void generate3mf;
