@@ -310,18 +310,16 @@ function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[]
   return errors;
 }
 
-function buildPlate1Json(printer: Printer, state: WizardState, processLeaf: string, filamentLeaf: string): string {
+function buildPlate1Json(printer: Printer, _state: WizardState, _processLeaf: string, _filamentLeaf: string): string {
   return JSON.stringify({
-    version: 2,
+    filament_ids: [1],
+    first_extruder: 1,
+    is_seq_print: false,
     nozzle_diameter: parseFloat(printer.printerVariant),
-    printer_model_id: printer.modelId,
-    printer_settings_id: printer.id,
-    print_settings_id: processLeaf,
-    filament_settings_id: [filamentLeaf],
-    curr_bed_type: state.bed,
-    object_count: 1,
+    version: 2,
   });
 }
+
 
 function buildModelSettingsXml(state: WizardState, printer: Printer): string {
   const safeName = xmlEscape(state.mesh?.fileName ?? "modelo.stl");
@@ -369,7 +367,7 @@ function buildSliceInfoXml(printer: Printer, state: WizardState): string {
 </config>`;
 }
 
-function validatePlate1(json: string, state?: WizardState): string[] {
+function validatePlate1(json: string, _state?: WizardState): string[] {
   const errors: string[] = [];
   try {
     const p = JSON.parse(json) as Record<string, unknown>;
@@ -377,20 +375,21 @@ function validatePlate1(json: string, state?: WizardState): string[] {
       errors.push("plate_1.json: nozzle_diameter inválido.");
     }
     if (p.version !== 2) errors.push("plate_1.json: version deve ser 2.");
-    if (state?.printer && p.printer_model_id !== state.printer.modelId) {
-      errors.push("plate_1.json: printer_model_id não corresponde à impressora selecionada.");
+    if (!Array.isArray(p.filament_ids) || p.filament_ids.length === 0) {
+      errors.push("plate_1.json: filament_ids ausente.");
     }
-    if (state?.printer && p.printer_settings_id !== state.printer.id) {
-      errors.push("plate_1.json: printer_settings_id não corresponde à impressora selecionada.");
+    if (typeof p.first_extruder !== "number") {
+      errors.push("plate_1.json: first_extruder ausente.");
     }
-    if (state?.bed && p.curr_bed_type !== state.bed) {
-      errors.push("plate_1.json: curr_bed_type não corresponde à placa selecionada.");
+    if (typeof p.is_seq_print !== "boolean") {
+      errors.push("plate_1.json: is_seq_print ausente.");
     }
   } catch {
     errors.push("plate_1.json: JSON inválido.");
   }
   return errors;
 }
+
 
 function validateModelXml(xml: string): string[] {
   const errors: string[] = [];
