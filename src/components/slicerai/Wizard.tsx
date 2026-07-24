@@ -965,7 +965,7 @@ function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (
               >
                 <span className="truncate">
                   <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: h.color }} />
-                  {h.fileName} · {h.materialId} · {h.purpose}
+                  {h.outputFileName ?? h.fileName} · {h.materialId} · {h.purpose}
                 </span>
                 <span className="text-muted-foreground shrink-0">
                   {new Date(h.createdAt).toLocaleDateString("pt-BR")}
