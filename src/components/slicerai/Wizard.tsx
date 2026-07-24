@@ -368,6 +368,11 @@ export function Wizard() {
                 genError={genError}
                 lastResult={lastResult}
                 onGenerate={onGenerate}
+                validation={validation}
+                validating={validating}
+                onRevalidate={runValidation}
+                onSync={onSync}
+                syncing={syncing}
               />
             )}
 
