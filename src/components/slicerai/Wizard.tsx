@@ -236,6 +236,34 @@ export function Wizard() {
     }
   }, [state]);
 
+  // ---- Validation preview (step 7) ----
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
+  const [validating, setValidating] = useState(false);
+  const runValidation = useCallback(async () => {
+    setValidating(true);
+    try {
+      const rep = await previewValidation(state);
+      setValidation(rep);
+    } catch (e) {
+      setValidation({
+        ok: false, needsSync: false, keyCount: 0,
+        dssSlots: { process: [], filament: [], printer: [], length: 0 },
+        plateOk: false, plateInfo: null, processLeaf: null, filamentLeaf: null,
+        errors: [(e as Error).message], warnings: [],
+      });
+    } finally {
+      setValidating(false);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (step !== 7) return;
+    setValidation(null);
+    runValidation();
+  }, [step, runValidation]);
+
+
+
 
   const canNext = useMemo(() => {
     switch (step) {
