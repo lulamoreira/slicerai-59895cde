@@ -402,12 +402,56 @@ export function Wizard() {
             </Card>
             {step >= 5 && <LegendChip analysis={state.analysis} />}
 
-            <HistoryCard history={history} onReuse={(entry) => {
+            <HistoryCard history={history} onReuse={async (entry) => {
               const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
               const m = MATERIALS.find((x) => x.id === entry.materialId) ?? state.material;
-              patch({ printer: p, material: m, purpose: entry.purpose, color: entry.color, supportMode: entry.supportMode as WizardState["supportMode"] });
-              toast.success("Configurações do histórico aplicadas");
+              let mesh: STLMesh | null = null;
+              try {
+                const buf = await getStl(entry.id);
+                if (buf) {
+                  const file = new File([buf], entry.fileName, { type: "model/stl" });
+                  mesh = await parseSTL(file);
+                }
+              } catch { /* ignore */ }
+
+              const patchState: Partial<WizardState> = {
+                printer: p,
+                material: m,
+                purpose: entry.purpose,
+                color: entry.color,
+                supportMode: entry.supportMode as WizardState["supportMode"],
+                bed: entry.bed ?? state.bed,
+                centerOnBed: entry.centerOnBed ?? state.centerOnBed,
+                overrides: entry.overrides ?? {},
+                ironing: entry.ironing ?? state.ironing,
+                chosenOrientationKey: entry.chosenOrientationKey ?? "original",
+              };
+              if (mesh) {
+                patchState.mesh = mesh;
+                patchState.analysis = null;
+                patchState.orientations = [];
+              }
+              patch(patchState);
+
+              if (mesh && p && m) {
+                try {
+                  const orientations = analyzeAllOrientations(mesh, m, p.bed);
+                  const key = entry.chosenOrientationKey ?? "original";
+                  const chosen = orientations.find((o) => o.key === key) ?? orientations[0];
+                  let a = chosen.analysis;
+                  if (a.needsSupport && purposeToTreePreference(entry.purpose) && a.suggestedType !== "tree") {
+                    a = { ...a, suggestedType: "tree", reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)" };
+                  }
+                  patch({ orientations, chosenOrientationKey: chosen.key, analysis: a });
+                } catch { /* ignore */ }
+                setStep(7);
+                toast.success("Histórico restaurado — pronto para gerar");
+              } else {
+                toast.warning("Modelo não encontrado, faça upload novamente");
+                setStep(1);
+              }
             }} />
+
           </div>
         </div>
       </div>
