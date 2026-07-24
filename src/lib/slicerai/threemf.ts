@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import type { MaterialBase, Printer, STLMesh, Vec3, WizardState } from "./types";
 import { findFilamentInherits, findProcessInherits } from "./catalog";
 import { purposeProfile, supportConfig, type SupportConfig } from "./rules";
+import { resolveChain } from "./resolve";
 
 const VERSION = "02.07.01.62";
 
@@ -15,7 +16,6 @@ function xmlEscape(s: string): string {
 }
 
 function fmt(n: number): string {
-  // 4 decimals with dot
   const s = n.toFixed(4);
   return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
 }
@@ -27,18 +27,14 @@ function transformMesh(mesh: STLMesh, rotation: Vec3, centerOnBed: boolean, prin
     const cx = Math.cos(rx), sx = Math.sin(rx);
     const cy = Math.cos(ry), sy = Math.sin(ry);
     const cz = Math.cos(rz), sz = Math.sin(rz);
-    // XYZ Euler intrinsic: R = Rz * Ry * Rx
     for (let i = 0; i < positions.length; i += 3) {
       let x = positions[i], y = positions[i + 1], z = positions[i + 2];
-      // Rx
       let y1 = y * cx - z * sx;
       let z1 = y * sx + z * cx;
       y = y1; z = z1;
-      // Ry
       let x1 = x * cy + z * sy;
       z1 = -x * sy + z * cy;
       x = x1; z = z1;
-      // Rz
       x1 = x * cz - y * sz;
       y1 = x * sz + y * cz;
       x = x1; y = y1;
@@ -112,16 +108,24 @@ const RELS = `<?xml version="1.0" encoding="UTF-8"?>
  <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-function stringifyAll(o: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (Array.isArray(v)) out[k] = v.map((x) => String(x));
-    else out[k] = String(v);
-  }
-  return out;
-}
-
 const VALID_BEDS = new Set(["Cool Plate", "Engineering Plate", "High Temp Plate", "Textured PEI Plate", "Smooth PEI Plate"]);
+
+/** Meta keys that must NOT appear in project_settings.config. */
+const META_STRIP = new Set([
+  "type", "name", "from", "setting_id", "instantiation", "inherits",
+  "filament_id", "filament_settings_id", "print_settings_id", "printer_settings_id",
+  "compatible_printers", "compatible_printers_condition",
+  "compatible_prints", "compatible_prints_condition",
+  "version", "is_custom_defined",
+]);
+
+function toStringy(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map((x) => (typeof x === "boolean" ? (x ? "1" : "0") : String(x)));
+  if (typeof v === "boolean") return v ? "1" : "0";
+  if (v == null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 export interface GenerateResult {
   blob: Blob;
@@ -130,11 +134,7 @@ export interface GenerateResult {
   processName: string;
   filamentName: string;
   size: Vec3;
-  settings: {
-    project: Record<string, unknown>;
-    process: Record<string, unknown>;
-    filament: Record<string, unknown>;
-  };
+  settings: Record<string, unknown>;
   report: {
     blob: Blob;
     fileName: string;
@@ -142,62 +142,63 @@ export interface GenerateResult {
   };
 }
 
-
 function resolveIroningType(state: WizardState): "no ironing" | "top" | "topmost" | "solid" {
   if (state.ironing.type) return state.ironing.type;
   return state.purpose === "decoracao" ? "top" : "no ironing";
 }
 
-function assemble(
+async function assembleCfg(
   state: WizardState,
   printer: Printer,
   material: MaterialBase,
   sup: SupportConfig,
   bed: string,
-): { project: Record<string, unknown>; process: Record<string, unknown>; filament: Record<string, unknown>; processName: string; filamentName: string } {
+): Promise<{ cfg: Record<string, unknown>; processLeaf: string; filamentLeaf: string }> {
   const purpose = state.purpose!;
   const prof = purposeProfile(purpose, material);
-  const timestamp = Date.now();
-  const processName = `SlicerAI_${purpose}_${printer.suffix.replace(/[^A-Za-z0-9]/g, "")}_${timestamp}`;
-  const filamentName = `SlicerAI_${material.id}_${printer.suffix.replace(/[^A-Za-z0-9]/g, "")}_${timestamp}`;
-
-  const processInherits = findProcessInherits(printer, prof.layer, []);
-  const filamentInherits = findFilamentInherits(printer, material);
-
   const overrides = state.overrides;
-  const layer = overrides.layer_height ?? String(prof.layer);
+
+  const layerStr = overrides.layer_height ?? String(prof.layer);
   const walls = overrides.wall_loops ?? String(prof.walls);
   const infill = overrides.sparse_infill_density ?? `${prof.infill}%`;
   const pattern = overrides.sparse_infill_pattern ?? prof.pattern;
   const wallGen = overrides.wall_generator ?? prof.wallGenerator;
-
   const ironingType = resolveIroningType(state);
 
-  const process: Record<string, unknown> = {
-    type: "process",
-    name: processName,
-    from: "User",
-    setting_id: `GP_SlicerAI_${timestamp}`,
-    inherits: processInherits,
-    instantiation: "true",
-    version: VERSION,
-    print_settings_id: processName,
-    compatible_printers: [printer.id],
+  const machineLeaf = printer.id;
+  const processLeaf = findProcessInherits(printer, parseFloat(layerStr), []);
+  const filamentLeaf = findFilamentInherits(printer, material);
 
-    layer_height: layer,
+  const [machineCfg, processCfg, filamentCfg] = await Promise.all([
+    resolveChain("machine", machineLeaf),
+    resolveChain("process", processLeaf),
+    resolveChain("filament", filamentLeaf),
+  ]);
+
+  const cfg: Record<string, unknown> = {};
+  const copy = (src: Record<string, unknown>) => {
+    for (const [k, v] of Object.entries(src)) {
+      if (META_STRIP.has(k)) continue;
+      cfg[k] = toStringy(v);
+    }
+  };
+  copy(machineCfg);
+  copy(processCfg);
+  copy(filamentCfg);
+
+  // ----- Process overrides (scalar strings) -----
+  const processOverrides: Record<string, string> = {
+    layer_height: layerStr,
     initial_layer_print_height: "0.2",
     wall_loops: walls,
     sparse_infill_density: infill,
     sparse_infill_pattern: pattern,
     wall_generator: wallGen,
     outer_wall_speed: String(prof.outerSpeed),
-
-    // Ironing (top surface smoothing) — enum: "no ironing"|"top"|"topmost"|"solid"
     ironing_type: ironingType,
     ironing_flow: state.ironing.flow,
     ironing_spacing: state.ironing.spacing,
     ironing_speed: state.ironing.speed,
-
     enable_support: sup.supportOn ? "1" : "0",
     support_type: sup.supportOn ? (sup.type === "tree" ? "tree(auto)" : "normal(auto)") : "normal(auto)",
     support_style: sup.style,
@@ -216,26 +217,15 @@ function assemble(
     tree_support_branch_diameter: "2",
     tree_support_tip_diameter: "0.4",
   };
+  for (const [k, v] of Object.entries(processOverrides)) cfg[k] = v;
 
-  const filament: Record<string, unknown> = {
-    type: "filament",
-    name: filamentName,
-    from: "User",
-    setting_id: `GFSA_SlicerAI_${timestamp}`,
-    filament_id: material.filamentId,
-    inherits: filamentInherits,
-    instantiation: "true",
-    version: VERSION,
-    filament_settings_id: [filamentName],
+  // ----- Filament overrides (arrays of 1 string) -----
+  const filamentOverrides: Record<string, string[]> = {
     filament_type: [material.filamentType],
     filament_diameter: ["1.75"],
-    filament_colour: [state.color.toUpperCase()],
     filament_is_support: ["0"],
-    compatible_printers: [printer.id],
-
     nozzle_temperature: [String(material.nozzle)],
     nozzle_temperature_initial_layer: [String(material.nozzleInitial ?? material.nozzle)],
-
     hot_plate_temp: [String(material.bed)],
     hot_plate_temp_initial_layer: [String(material.bed)],
     filament_max_volumetric_speed: [String(material.volSpeed)],
@@ -245,98 +235,39 @@ function assemble(
     close_fan_the_first_x_layers: ["1"],
     filament_retraction_length: [String(material.retraction)],
   };
+  for (const [k, v] of Object.entries(filamentOverrides)) cfg[k] = v;
 
-  const PRESET_META = new Set([
-    "type",
-    "name",
-    "inherits",
-    "setting_id",
-    "instantiation",
-    "compatible_printers",
-    "from",
-    "is_custom_defined",
-    "filament_id",
-  ]);
-  const paramsOnly = (o: Record<string, unknown>) => {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(o)) if (!PRESET_META.has(k)) out[k] = v;
-    return out;
-  };
+  // ----- Project lineage (last write wins) -----
+  cfg.from = "project";
+  cfg.printer_settings_id = printer.id;
+  cfg.print_settings_id = processLeaf;
+  cfg.filament_settings_id = [filamentLeaf];
+  cfg.nozzle_diameter = [printer.printerVariant];
+  cfg.curr_bed_type = bed;
+  cfg.filament_colour = [state.color.toUpperCase()];
+  cfg.different_settings_to_system = [
+    Object.keys(processOverrides).join(";"),
+    "",
+    Object.keys(filamentOverrides).join(";"),
+  ];
 
-
-
-
-  const projectLineage: Record<string, unknown> = {
-    from: "User",
-    name: `SlicerAI Project ${timestamp}`,
-    version: VERSION,
-    is_custom_defined: "0",
-    printer_settings_id: printer.id,
-    print_settings_id: processName,
-    filament_settings_id: [filamentName],
-    printer_model: printer.printerModel,
-    printer_variant: printer.printerVariant,
-    nozzle_diameter: [printer.printerVariant],
-    filament_diameter: ["1.75"],
-    filament_colour: [state.color.toUpperCase()],
-    filament_type: [material.filamentType],
-    filament_is_support: ["0"],
-    filament_max_volumetric_speed: [String(material.volSpeed)],
-    default_print_profile: processName,
-    default_filament_profile: [filamentName],
-    inherits_group: ["", "", ""],
-    different_settings_to_system: ["", "", ""],
-
-    curr_bed_type: bed,
-  };
-
-  const project: Record<string, unknown> = {
-    ...projectLineage,
-    ...paramsOnly(process),
-    ...paramsOnly(filament),
-  };
-
-  return { project, process, filament, processName, filamentName };
+  return { cfg, processLeaf, filamentLeaf };
 }
 
-export function validate(
-  state: WizardState,
-  built: { project: Record<string, unknown>; process: Record<string, unknown>; filament: Record<string, unknown>; processName: string; filamentName: string },
-): { ok: boolean; errors: string[] } {
+function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[] {
   const errors: string[] = [];
-  if (!state.color || !/^#[0-9A-Fa-f]{6}$/.test(state.color)) errors.push("Cor do filamento é obrigatória (#RRGGBB).");
+  const nKeys = Object.keys(cfg).length;
+  if (nKeys <= 100) errors.push(`project_settings.config incompleto: ${nKeys} chaves (mínimo 100). Clique em "Aprender com o GitHub" e tente novamente.`);
+  if (cfg.from !== "project") errors.push('cfg.from deve ser "project".');
+  for (const bad of ["type", "inherits", "setting_id", "instantiation"]) {
+    if (bad in cfg) errors.push(`cfg contém chave proibida: ${bad}`);
+  }
+  if (!Array.isArray(cfg.filament_colour) || (cfg.filament_colour as unknown[]).length === 0) {
+    errors.push("filament_colour ausente.");
+  }
   if (!VALID_BEDS.has(state.bed)) errors.push(`curr_bed_type inválido: ${state.bed}`);
-  if (!Array.isArray(built.filament.filament_settings_id)) errors.push("filament_settings_id deve ser array.");
-  if (!Array.isArray(built.filament.filament_colour) || (built.filament.filament_colour as string[]).length === 0) errors.push("filament_colour ausente ou vazio.");
-
-  const parallelKeys = ["filament_colour", "filament_diameter", "filament_type", "filament_settings_id", "filament_is_support"];
-  const lens = parallelKeys.map((k) => (Array.isArray(built.project[k]) ? (built.project[k] as unknown[]).length : -1));
-  if (new Set(lens).size !== 1 || lens[0] < 1) errors.push("Arrays paralelos do filamento devem ter mesmo tamanho.");
-
-  if (!built.processName.startsWith("SlicerAI_")) errors.push("Nome do processo deve começar com 'SlicerAI_'.");
-  if (!built.filamentName.startsWith("SlicerAI_")) errors.push("Nome do filamento deve começar com 'SlicerAI_'.");
-
-  const check = (o: Record<string, unknown>, path: string) => {
-    for (const [k, v] of Object.entries(o)) {
-      if (Array.isArray(v)) {
-        for (const x of v) if (typeof x !== "string") errors.push(`${path}.${k} contém não-string.`);
-      } else if (typeof v !== "string") errors.push(`${path}.${k} não é string.`);
-    }
-  };
-  check(built.process, "process");
-  check(built.filament, "filament");
-  check(built.project, "project");
-
-  return { ok: errors.length === 0, errors };
-}
-
-function stringifyAllSet(built: ReturnType<typeof assemble>) {
-  return {
-    ...built,
-    project: stringifyAll(built.project),
-    process: stringifyAll(built.process),
-    filament: stringifyAll(built.filament),
-  };
+  if (!state.color || !/^#[0-9A-Fa-f]{6}$/.test(state.color)) errors.push("Cor do filamento é obrigatória (#RRGGBB).");
+  return errors;
 }
 
 export async function generate3mfAsync(state: WizardState): Promise<GenerateResult> {
@@ -355,9 +286,11 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
     state.supportMode === "tree" ? "tree" : state.supportMode === "normal" ? "normal" : state.analysis?.suggestedType === "tree" ? "tree" : "normal";
 
   const sup = supportConfig(material, supportType, supportOn);
-  const built = stringifyAllSet(assemble(state, printer, material, sup, state.bed));
-  const validation = validate(state, built);
-  if (!validation.ok) throw new Error(`Validação falhou:\n- ${validation.errors.join("\n- ")}`);
+
+  const { cfg, processLeaf, filamentLeaf } = await assembleCfg(state, printer, material, sup, state.bed);
+
+  const errors = validateCfg(cfg, state);
+  if (errors.length) throw new Error(`Validação falhou:\n- ${errors.join("\n- ")}`);
 
   const transformed = transformMesh(state.mesh, rotation, state.centerOnBed, printer);
   const modelXml = build3dmodelXml(transformed);
@@ -383,16 +316,17 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
  </plate>
 </config>`;
 
+  const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(printer.printerVariant), version: 2 });
+
   const zip = new JSZip();
   zip.file("[Content_Types].xml", CONTENT_TYPES);
   zip.folder("_rels")!.file(".rels", RELS);
   zip.folder("3D")!.file("3dmodel.model", modelXml);
   const meta = zip.folder("Metadata")!;
-  meta.file("project_settings.config", JSON.stringify(built.project, null, 1));
-  meta.file("process_settings_1.config", JSON.stringify(built.process, null, 1));
-  meta.file("filament_settings_1.config", JSON.stringify(built.filament, null, 1));
+  meta.file("project_settings.config", JSON.stringify(cfg));
   meta.file("model_settings.config", modelSettings);
   meta.file("slice_info.config", sliceInfo);
+  meta.file("plate_1.json", plate1);
 
   const blob = await zip.generateAsync({
     type: "blob",
@@ -407,8 +341,8 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
   const baseName = `${modelBase}_${printerShort}_${materialShort}_${purposeShort}`;
   const fileName = `${baseName}.3mf`;
 
-  const summary = buildSummary(state, printer, material, sup, transformed.size, built.processName, built.filamentName);
-  const reportText = buildReport(state, printer, material, sup, transformed.size, built, resolveIroningType(state));
+  const summary = buildSummary(state, printer, material, sup, transformed.size, processLeaf, filamentLeaf);
+  const reportText = buildReport(state, printer, material, sup, transformed.size, cfg, processLeaf, filamentLeaf, resolveIroningType(state));
   const reportFileName = `${baseName}_LEIA-ME.txt`;
   const reportBlob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
 
@@ -416,10 +350,10 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
     blob,
     fileName,
     summary,
-    processName: built.processName,
-    filamentName: built.filamentName,
+    processName: processLeaf,
+    filamentName: filamentLeaf,
     size: transformed.size,
-    settings: { project: built.project, process: built.process, filament: built.filament },
+    settings: cfg,
     report: { blob: reportBlob, fileName: reportFileName, text: reportText },
   };
 }
@@ -446,15 +380,14 @@ function capitalizePurpose(p: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-
 function buildSummary(
   state: WizardState,
   printer: Printer,
   material: MaterialBase,
   sup: SupportConfig,
   size: Vec3,
-  processName: string,
-  filamentName: string,
+  processLeaf: string,
+  filamentLeaf: string,
 ): string {
   const lines = [
     "SlicerAI — Resumo",
@@ -470,8 +403,8 @@ function buildSummary(
   if (sup.supportOn) {
     lines.push(`  ↳ folga topo: ${sup.topZ}mm, ângulo: ${sup.thresholdAngle}°, XY: ${sup.xyDistance}mm, interfaces: ${sup.interfaceTop}/${sup.interfaceBottom}, padrão: ${sup.interfacePattern}`);
   }
-  lines.push(`Preset processo: ${processName}`);
-  lines.push(`Preset filamento: ${filamentName}`);
+  lines.push(`Preset processo base: ${processLeaf}`);
+  lines.push(`Preset filamento base: ${filamentLeaf}`);
   lines.push("");
   lines.push("Obs.: os valores de flow são ponto de partida — calibre em 1 spool novo.");
   return lines.join("\n");
@@ -483,16 +416,18 @@ function buildReport(
   material: MaterialBase,
   sup: SupportConfig,
   size: Vec3,
-  built: { processName: string; filamentName: string; process: Record<string, unknown> },
+  cfg: Record<string, unknown>,
+  processLeaf: string,
+  filamentLeaf: string,
   ironingType: "no ironing" | "top" | "topmost" | "solid",
 ): string {
   const L: string[] = [];
   const isDeco = state.purpose === "decoracao";
   const isTechnical = ["PETG", "PETG-CF", "ABS", "ASA", "PA", "PLA-CF"].includes(material.filamentType);
-  const layer = String((built.process.layer_height as string) ?? "");
-  const walls = String((built.process.wall_loops as string) ?? "");
-  const infill = String((built.process.sparse_infill_density as string) ?? "");
-  const wallGen = String((built.process.wall_generator as string) ?? "");
+  const layer = String((cfg.layer_height as string) ?? "");
+  const walls = String((cfg.wall_loops as string) ?? "");
+  const infill = String((cfg.sparse_infill_density as string) ?? "");
+  const wallGen = String((cfg.wall_generator as string) ?? "");
 
   L.push("SlicerAI — RELATÓRIO DA GERAÇÃO");
   L.push("=".repeat(48));
@@ -503,8 +438,8 @@ function buildReport(
   L.push(`Placa            : ${state.bed}`);
   L.push(`Material / cor   : ${material.label} — ${state.color}`);
   L.push(`Finalidade       : ${state.purpose}`);
-  L.push(`Preset processo  : ${built.processName}`);
-  L.push(`Preset filamento : ${built.filamentName}`);
+  L.push(`Preset processo  : ${processLeaf}`);
+  L.push(`Preset filamento : ${filamentLeaf}`);
   L.push("");
 
   L.push("O QUE FOI APLICADO E POR QUÊ");
@@ -562,4 +497,3 @@ function buildReport(
   L.push("Gerado por SlicerAI · 100% client-side.");
   return L.join("\n");
 }
-
