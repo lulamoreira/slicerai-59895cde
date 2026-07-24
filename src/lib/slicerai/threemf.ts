@@ -521,19 +521,3 @@ function buildReport(
   return L.join("\n");
 }
 
-export function exportPresetsJson(state: WizardState): Blob {
-  if (!state.mesh || !state.printer || !state.material || !state.purpose) {
-    throw new Error("Estado incompleto.");
-  }
-  const printer = state.printer!;
-  const material = state.material!;
-  const chosen = state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? state.orientations[0];
-  void chosen;
-  const supportOn =
-    state.supportMode === "off" ? false : state.supportMode === "auto" ? (state.analysis?.needsSupport ?? false) : true;
-  const supportType: "normal" | "tree" =
-    state.supportMode === "tree" ? "tree" : state.supportMode === "normal" ? "normal" : state.analysis?.suggestedType === "tree" ? "tree" : "normal";
-  const sup = supportConfig(material, supportType, supportOn);
-  const built = stringifyAllSet(assemble(state, printer, material, sup, state.bed));
-  return new Blob([JSON.stringify(built, null, 2)], { type: "application/json" });
-}
