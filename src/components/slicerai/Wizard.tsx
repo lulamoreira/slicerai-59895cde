@@ -26,10 +26,11 @@ import {
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
 import { generate3mfAsync } from "@/lib/slicerai/threemf";
-import { loadHistory, saveHistory } from "@/lib/slicerai/storage";
+import { loadHistory, saveHistory, putStl, getStl } from "@/lib/slicerai/storage";
 import type {
   HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
 } from "@/lib/slicerai/types";
+
 
 const STEPS = [
   { id: 1, label: "STL", icon: Upload },
