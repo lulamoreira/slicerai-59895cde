@@ -896,6 +896,7 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 
 function StepGenerate({
   state, generating, genError, lastResult, onGenerate,
+  validation, validating, onRevalidate, onSync, syncing,
 }: {
   state: WizardState;
   generating: boolean;
@@ -908,14 +909,20 @@ function StepGenerate({
     reportFileName: string;
   } | null;
   onGenerate: () => void;
-
+  validation: ValidationReport | null;
+  validating: boolean;
+  onRevalidate: () => void;
+  onSync: () => void;
+  syncing: boolean;
 }) {
   const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
+  const canGenerate = !!validation?.ok && !generating && !validating;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Revisar e gerar</CardTitle>
-        <CardDescription>Validação anti-crash antes do download. O relatório .txt é criado junto.</CardDescription>
+        <CardDescription>Confira as validações antes de baixar o .3mf. Só liberamos o download se tudo estiver íntegro.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
@@ -926,12 +933,26 @@ function StepGenerate({
           <div><strong>Ironing:</strong> {effectiveIroning}</div>
         </div>
 
+        <ValidationSummary
+          report={validation}
+          loading={validating}
+          onRevalidate={onRevalidate}
+          onSync={onSync}
+          syncing={syncing}
+        />
+
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onGenerate} disabled={generating}>
+          <Button onClick={onGenerate} disabled={!canGenerate}>
             <Download className="w-4 h-4 mr-2" />
-            {generating ? "Gerando..." : "Gerar .3mf"}
+            {generating ? "Gerando..." : validating ? "Validando..." : "Gerar .3mf"}
           </Button>
+          {!canGenerate && !validating && (
+            <span className="text-xs text-muted-foreground self-center">
+              {validation?.errors.length ? "Corrija os itens acima para liberar o download." : "Aguardando validação..."}
+            </span>
+          )}
         </div>
+
 
         {genError && (
           <Alert variant="destructive">
