@@ -248,7 +248,9 @@ export function Wizard() {
       setValidation({
         ok: false, needsSync: false, keyCount: 0,
         dssSlots: { process: [], filament: [], printer: [], length: 0 },
-        plateOk: false, plateInfo: null, processLeaf: null, filamentLeaf: null,
+        plateOk: false, plateInfo: null,
+        modelMetadataOk: false, modelSettingsOk: false, sliceInfoOk: false,
+        processLeaf: null, filamentLeaf: null,
         errors: [(e as Error).message], warnings: [],
       });
     } finally {
@@ -1100,6 +1102,21 @@ function ValidationSummary({
           ok={report.plateOk}
           label="Metadata/plate_1.json íntegro"
           detail={report.plateInfo ? `nozzle_diameter=${report.plateInfo.nozzle} · version=${report.plateInfo.version}` : "JSON ausente ou inválido."}
+        />
+        <Item
+          ok={report.modelMetadataOk}
+          label="3D/3dmodel.model reconhecido como projeto Bambu"
+          detail="Application BambuStudio, BambuStudio:3mfVersion e build/item presentes."
+        />
+        <Item
+          ok={report.modelSettingsOk}
+          label="Metadata/model_settings.config vincula peça e placa"
+          detail="object, part normal_part, plate e model_instance presentes."
+        />
+        <Item
+          ok={report.sliceInfoOk}
+          label="Metadata/slice_info.config consistente"
+          detail="Cabeçalhos do slicer, impressora e bico conferidos."
         />
       </ul>
 
