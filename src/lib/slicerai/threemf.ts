@@ -172,6 +172,8 @@ function assemble(
   const pattern = overrides.sparse_infill_pattern ?? prof.pattern;
   const wallGen = overrides.wall_generator ?? prof.wallGenerator;
 
+  const ironingType = resolveIroningType(state);
+
   const process: Record<string, unknown> = {
     type: "process",
     name: processName,
@@ -190,6 +192,12 @@ function assemble(
     sparse_infill_pattern: pattern,
     wall_generator: wallGen,
     outer_wall_speed: String(prof.outerSpeed),
+
+    // Ironing (top surface smoothing) — enum: "no ironing"|"top"|"topmost"|"solid"
+    ironing_type: ironingType,
+    ironing_flow: state.ironing.flow,
+    ironing_spacing: state.ironing.spacing,
+    ironing_speed: state.ironing.speed,
 
     enable_support: sup.supportOn ? "1" : "0",
     support_type: sup.supportOn ? (sup.type === "tree" ? "tree(auto)" : "normal(auto)") : "normal(auto)",
