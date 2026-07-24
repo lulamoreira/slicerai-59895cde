@@ -286,14 +286,11 @@ function assemble(
     filament_type: [material.filamentType],
     filament_is_support: ["0"],
     filament_max_volumetric_speed: [String(material.volSpeed)],
-    default_print_profile: processInherits,
-    default_filament_profile: [filamentInherits],
+    default_print_profile: processName,
+    default_filament_profile: [filamentName],
     inherits_group: ["", "", ""],
-    different_settings_to_system: [
-      processParamKeys.join(";"),
-      "",
-      filamentParamKeys.join(";"),
-    ],
+    different_settings_to_system: ["", "", ""],
+
     curr_bed_type: bed,
   };
 
