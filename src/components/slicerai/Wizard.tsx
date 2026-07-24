@@ -69,16 +69,38 @@ function initialState(): WizardState {
   };
 }
 
+const LS_LAST_PRINTER = "slicerai.lastPrinterId";
+
 export function Wizard() {
   const [step, setStep] = useState(1);
-  const [state, setState] = useState<WizardState>(initialState);
   const [printers, setPrinters] = useState<Printer[]>(() => loadPrinters());
+  const [state, setState] = useState<WizardState>(() => {
+    const s = initialState();
+    try {
+      const lastId = localStorage.getItem(LS_LAST_PRINTER);
+      const list = loadPrinters();
+      const def = list.find((p) => p.id === lastId)
+        ?? list.find((p) => p.id === "Bambu Lab A1 0.4 nozzle")
+        ?? list[0]
+        ?? null;
+      s.printer = def;
+    } catch { /* ignore */ }
+    return s;
+  });
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(() => getUpdatedAt());
   const [analyzing, setAnalyzing] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
 
   const patch = useCallback((p: Partial<WizardState>) => setState((s) => ({ ...s, ...p })), []);
+
+  // Persist last selected printer
+  useEffect(() => {
+    if (state.printer?.id) {
+      try { localStorage.setItem(LS_LAST_PRINTER, state.printer.id); } catch { /* ignore */ }
+    }
+  }, [state.printer?.id]);
+
 
   const chosenOri = useMemo(
     () => state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? null,
