@@ -828,8 +828,6 @@ function StepGenerate({
     summary: string;
     reportUrl: string;
     reportFileName: string;
-    zipUrl: string;
-    zipFileName: string;
   } | null;
   onGenerate: () => void;
 
@@ -838,8 +836,8 @@ function StepGenerate({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Gerar .3mf</CardTitle>
-        <CardDescription>Validação anti-crash antes do download. Gera .3mf + relatório .txt.</CardDescription>
+        <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Revisar e gerar</CardTitle>
+        <CardDescription>Validação anti-crash antes do download. O relatório .txt é criado junto.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
@@ -853,7 +851,7 @@ function StepGenerate({
         <div className="flex flex-wrap gap-2">
           <Button onClick={onGenerate} disabled={generating}>
             <Download className="w-4 h-4 mr-2" />
-            {generating ? "Gerando..." : "Gerar .3mf + relatório"}
+            {generating ? "Gerando..." : "Gerar .3mf"}
           </Button>
         </div>
 
@@ -880,11 +878,6 @@ function StepGenerate({
                   <Download className="w-4 h-4 mr-2" /> Baixar relatório (.txt)
                 </a>
               </Button>
-              <Button asChild size="sm" variant="secondary">
-                <a href={lastResult.zipUrl} download={lastResult.zipFileName}>
-                  <Download className="w-4 h-4 mr-2" /> Baixar ambos (.zip)
-                </a>
-              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -908,6 +901,7 @@ function StepGenerate({
     </Card>
   );
 }
+
 
 function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (h: HistoryEntry) => void }) {
   if (history.length === 0) return null;
