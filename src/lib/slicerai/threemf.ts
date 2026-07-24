@@ -434,6 +434,92 @@ function buildSummary(
   return lines.join("\n");
 }
 
+function buildReport(
+  state: WizardState,
+  printer: Printer,
+  material: MaterialBase,
+  sup: SupportConfig,
+  size: Vec3,
+  built: { processName: string; filamentName: string; process: Record<string, unknown> },
+  ironingType: "no ironing" | "top" | "topmost" | "solid",
+): string {
+  const L: string[] = [];
+  const isDeco = state.purpose === "decoracao";
+  const isTechnical = ["PETG", "PETG-CF", "ABS", "ASA", "PA", "PLA-CF"].includes(material.filamentType);
+  const layer = String((built.process.layer_height as string) ?? "");
+  const walls = String((built.process.wall_loops as string) ?? "");
+  const infill = String((built.process.sparse_infill_density as string) ?? "");
+  const wallGen = String((built.process.wall_generator as string) ?? "");
+
+  L.push("SlicerAI — RELATÓRIO DA GERAÇÃO");
+  L.push("=".repeat(48));
+  L.push("");
+  L.push(`Arquivo original : ${state.mesh?.fileName}`);
+  L.push(`Peça (após rot.) : ${size[0].toFixed(1)} × ${size[1].toFixed(1)} × ${size[2].toFixed(1)} mm`);
+  L.push(`Impressora       : ${printer.displayName} (${printer.id})`);
+  L.push(`Placa            : ${state.bed}`);
+  L.push(`Material / cor   : ${material.label} — ${state.color}`);
+  L.push(`Finalidade       : ${state.purpose}`);
+  L.push(`Preset processo  : ${built.processName}`);
+  L.push(`Preset filamento : ${built.filamentName}`);
+  L.push("");
+
+  L.push("O QUE FOI APLICADO E POR QUÊ");
+  L.push("-".repeat(48));
+  L.push(`• Altura de camada ${layer} mm — equilíbrio entre acabamento e tempo para a finalidade "${state.purpose}".`);
+  L.push(`• ${walls} paredes, preenchimento ${infill} — dimensionado para a finalidade.`);
+  L.push(`• Gerador de parede: ${wallGen}${wallGen === "arachne" ? " — larguras variáveis para preservar detalhes finos." : " — traçado clássico, previsível para peças funcionais."}`);
+  L.push(`• Bico ${material.nozzle}°C / mesa ${material.bed}°C, vazão máx ${material.volSpeed} mm³/s — perfil oficial do material.`);
+  if (sup.supportOn) {
+    L.push(`• Suporte ${sup.type.toUpperCase()} ligado: folga de topo ${sup.topZ}mm, ângulo ${sup.thresholdAngle}°, XY ${sup.xyDistance}mm — evita solda em ${material.filamentType} e melhora remoção.`);
+  } else {
+    L.push("• Sem suporte — a orientação escolhida elimina overhangs críticos.");
+  }
+  if (ironingType !== "no ironing") {
+    L.push(`• Ironing "${ironingType}" (fluxo ${state.ironing.flow}, spacing ${state.ironing.spacing}mm, ${state.ironing.speed} mm/s) — alisa as superfícies de topo, tirando as linhas de camada. Ideal para display.`);
+  } else {
+    L.push("• Ironing desligado — não necessário para esta finalidade.");
+  }
+  L.push("");
+
+  if (isDeco) {
+    L.push("PASSO MANUAL: VARIABLE LAYER HEIGHT (recomendado p/ decoração)");
+    L.push("-".repeat(48));
+    L.push("O Variable/Adaptive Layer Height é gerado pelo Bambu Studio a partir");
+    L.push("da geometria da peça — NÃO é um parâmetro simples do preset, por isso");
+    L.push("não vem embarcado no .3mf. Faça em 30 segundos:");
+    L.push("");
+    L.push('  1) Abra o .3mf no Bambu Studio.');
+    L.push('  2) Selecione a peça.');
+    L.push('  3) Na barra superior, clique no ícone "Variable Layer Height"');
+    L.push('     (o desenho de gota, no fim da barra).');
+    L.push('  4) Clique em "Adaptive".');
+    L.push('  5) Ajuste o slider Quality/Speed para ~0.3–0.4 (mais perto de Quality).');
+    L.push('  6) Clique em "Smooth" com Radius ~5 para transições suaves.');
+    L.push('  7) Feche o painel e clique em "Slice".');
+    L.push("");
+    L.push("Por quê: o Bambu vai usar camadas finas onde há curvas/detalhes e");
+    L.push("camadas grossas onde é reto. Acabamento muito melhor sem estourar o tempo.");
+    L.push("");
+  }
+
+  L.push("ANTES DE IMPRIMIR — CHECKLIST");
+  L.push("-".repeat(48));
+  if (isTechnical) {
+    L.push(`• Secar o filamento (${material.filamentType} absorve umidade → bolhas e stringing).`);
+  }
+  L.push(`• Conferir se a impressora ativa no Bambu Studio é "${printer.displayName}".`);
+  L.push(`• Confirmar a placa selecionada: "${state.bed}".`);
+  L.push("• No Preview, trocar o tema para \"Layer Height\" e conferir a distribuição das camadas.");
+  L.push("• Calibrar Flow ao menos 1x por spool nova (os valores aqui são ponto de partida).");
+  if (sup.supportOn && (material.filamentType === "PLA" || material.filamentType === "PETG")) {
+    L.push(`• Suporte em ${material.filamentType} tende a soldar em pontos críticos — considere Support Painting manual.`);
+  }
+  L.push("");
+  L.push("Gerado por SlicerAI · 100% client-side.");
+  return L.join("\n");
+}
+
 export function exportPresetsJson(state: WizardState): Blob {
   if (!state.mesh || !state.printer || !state.material || !state.purpose) {
     throw new Error("Estado incompleto.");
