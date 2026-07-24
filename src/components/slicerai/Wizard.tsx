@@ -816,9 +816,6 @@ function StepGenerate({
             <Download className="w-4 h-4 mr-2" />
             {generating ? "Gerando..." : "Gerar .3mf + relatório"}
           </Button>
-          <Button variant="outline" onClick={onExportJson}>
-            <FileJson className="w-4 h-4 mr-2" /> Exportar presets (.json)
-          </Button>
         </div>
 
         {genError && (
