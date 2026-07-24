@@ -247,8 +247,8 @@ async function assembleCfg(
   cfg.filament_colour = [state.color.toUpperCase()];
   cfg.different_settings_to_system = [
     Object.keys(processOverrides).join(";"),
-    "",
     Object.keys(filamentOverrides).join(";"),
+    "",
   ];
 
   return { cfg, processLeaf, filamentLeaf };
