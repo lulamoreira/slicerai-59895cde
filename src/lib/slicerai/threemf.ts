@@ -140,9 +140,8 @@ export interface GenerateResult {
     fileName: string;
     text: string;
   };
-  zipBlob: Blob;
-  zipFileName: string;
 }
+
 
 function resolveIroningType(state: WizardState): "no ironing" | "top" | "topmost" | "solid" {
   if (state.ironing.type) return state.ironing.type;
