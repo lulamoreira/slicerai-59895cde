@@ -3,7 +3,7 @@ import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 import type { MaterialBase, OrientationResult, Purpose, STLMesh, SupportAnalysis, Vec3 } from "./types";
 
 // Patch raycast once (idempotent).
-// @ts-expect-error augment
+// augment
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 interface PreppedMesh {
@@ -57,8 +57,7 @@ function buildGeometry(mesh: STLMesh, rotation?: Vec3): PreppedMesh {
   geom.computeVertexNormals();
 
   const bvh = new MeshBVH(geom);
-  // @ts-expect-error attach
-  geom.boundsTree = bvh;
+  (geom as unknown as { boundsTree: MeshBVH }).boundsTree = bvh;
 
   const mat = new THREE.MeshBasicMaterial();
   const meshObj = new THREE.Mesh(geom, mat);
