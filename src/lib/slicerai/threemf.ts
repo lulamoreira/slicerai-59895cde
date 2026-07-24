@@ -344,6 +344,9 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
 
   const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(printer.printerVariant), version: 2 });
 
+  const plateErrors = validatePlate1(plate1);
+  if (plateErrors.length) throw new Error(`Validação falhou:\n- ${plateErrors.join("\n- ")}`);
+
   const zip = new JSZip();
   zip.file("[Content_Types].xml", CONTENT_TYPES);
   zip.folder("_rels")!.file(".rels", RELS);
