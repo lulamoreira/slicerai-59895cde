@@ -156,7 +156,15 @@ export function Wizard() {
   }, [state.chosenOrientationKey]);
 
   const [generating, setGenerating] = useState(false);
-  const [lastResult, setLastResult] = useState<{ url: string; fileName: string; summary: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    url: string;
+    fileName: string;
+    summary: string;
+    reportUrl: string;
+    reportFileName: string;
+    zipUrl: string;
+    zipFileName: string;
+  } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
   const onGenerate = useCallback(async () => {
@@ -165,7 +173,17 @@ export function Wizard() {
     try {
       const res = await generate3mfAsync(state);
       const url = URL.createObjectURL(res.blob);
-      setLastResult({ url, fileName: res.fileName, summary: res.summary });
+      const reportUrl = URL.createObjectURL(res.report.blob);
+      const zipUrl = URL.createObjectURL(res.zipBlob);
+      setLastResult({
+        url,
+        fileName: res.fileName,
+        summary: res.summary,
+        reportUrl,
+        reportFileName: res.report.fileName,
+        zipUrl,
+        zipFileName: res.zipFileName,
+      });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         createdAt: Date.now(),
@@ -179,7 +197,7 @@ export function Wizard() {
       };
       saveHistory(entry);
       setHistory(loadHistory());
-      toast.success(".3mf gerado com sucesso");
+      toast.success(".3mf + relatório gerados");
     } catch (e) {
       setGenError((e as Error).message);
       toast.error("Falha na geração");
