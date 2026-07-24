@@ -25,7 +25,7 @@ import {
   loadPrinters, MATERIALS, OPEN_PRINTERS, syncGithub, getUpdatedAt,
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
-import { generate3mfAsync, exportPresetsJson } from "@/lib/slicerai/threemf";
+import { generate3mfAsync } from "@/lib/slicerai/threemf";
 import { loadHistory, saveHistory } from "@/lib/slicerai/storage";
 import type {
   HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
