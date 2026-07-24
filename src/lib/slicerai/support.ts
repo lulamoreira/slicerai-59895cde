@@ -224,10 +224,29 @@ export function analyzeAllOrientations(
 }
 
 export function pickBestOrientation(results: OrientationResult[]): OrientationResult {
-  const fitting = results.filter((r) => r.fits);
-  const pool = fitting.length > 0 ? fitting : results;
-  return pool.slice().sort((a, b) => a.analysis.supportPct - b.analysis.supportPct)[0];
+  const original = results.find((r) => r.key === "original") ?? results[0];
+  const originalPct = original.analysis.supportPct;
+  const originalHeight = Math.max(original.heightMm, 0.001);
+
+  // Candidates must fit the bed, have height <= 1.8x original,
+  // and reduce support area by at least 40% (relative) vs. original.
+  const candidates = results.filter((r) => {
+    if (r.key === "original") return false;
+    if (!r.fits) return false;
+    if (r.heightMm > originalHeight * 1.8) return false;
+    if (originalPct <= 0.005) return false; // original already essentially support-free
+    const reduction = (originalPct - r.analysis.supportPct) / originalPct;
+    return reduction >= 0.4;
+  });
+
+  if (candidates.length === 0) return original;
+  // Pick the candidate with the least support area, tiebreak by lower height.
+  return candidates.slice().sort((a, b) => {
+    const d = a.analysis.supportPct - b.analysis.supportPct;
+    return d !== 0 ? d : a.heightMm - b.heightMm;
+  })[0];
 }
+
 
 export function purposeToTreePreference(p: Purpose | null): boolean {
   return p === "miniatura";
