@@ -104,5 +104,7 @@ export async function parseSTL(file: File): Promise<STLMesh> {
     bbox: { min, max, size },
     volumeMm3,
     fileName: file.name,
+    sourceBuffer: buf,
   };
+
 }
