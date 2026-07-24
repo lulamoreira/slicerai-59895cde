@@ -263,12 +263,8 @@ function assemble(
     return out;
   };
 
-  const processParamKeys = Object.keys(paramsOnly(process)).filter(
-    (k) => k !== "version" && k !== "print_settings_id",
-  );
-  const filamentParamKeys = Object.keys(paramsOnly(filament)).filter(
-    (k) => k !== "version" && k !== "filament_settings_id",
-  );
+
+
 
   const projectLineage: Record<string, unknown> = {
     from: "User",
@@ -286,14 +282,11 @@ function assemble(
     filament_type: [material.filamentType],
     filament_is_support: ["0"],
     filament_max_volumetric_speed: [String(material.volSpeed)],
-    default_print_profile: processInherits,
-    default_filament_profile: [filamentInherits],
+    default_print_profile: processName,
+    default_filament_profile: [filamentName],
     inherits_group: ["", "", ""],
-    different_settings_to_system: [
-      processParamKeys.join(";"),
-      "",
-      filamentParamKeys.join(";"),
-    ],
+    different_settings_to_system: ["", "", ""],
+
     curr_bed_type: bed,
   };
 
