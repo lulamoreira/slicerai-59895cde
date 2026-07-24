@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
   Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
+  CheckCircle2, XCircle, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,7 +26,7 @@ import {
   loadPrinters, MATERIALS, OPEN_PRINTERS, syncGithub, getUpdatedAt,
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
-import { generate3mfAsync } from "@/lib/slicerai/threemf";
+import { generate3mfAsync, previewValidation, type ValidationReport } from "@/lib/slicerai/threemf";
 import { loadHistory, saveHistory, putStl, getStl } from "@/lib/slicerai/storage";
 import type {
   HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
@@ -235,6 +236,34 @@ export function Wizard() {
     }
   }, [state]);
 
+  // ---- Validation preview (step 7) ----
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
+  const [validating, setValidating] = useState(false);
+  const runValidation = useCallback(async () => {
+    setValidating(true);
+    try {
+      const rep = await previewValidation(state);
+      setValidation(rep);
+    } catch (e) {
+      setValidation({
+        ok: false, needsSync: false, keyCount: 0,
+        dssSlots: { process: [], filament: [], printer: [], length: 0 },
+        plateOk: false, plateInfo: null, processLeaf: null, filamentLeaf: null,
+        errors: [(e as Error).message], warnings: [],
+      });
+    } finally {
+      setValidating(false);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (step !== 7) return;
+    setValidation(null);
+    runValidation();
+  }, [step, runValidation]);
+
+
+
 
   const canNext = useMemo(() => {
     switch (step) {
@@ -339,6 +368,11 @@ export function Wizard() {
                 genError={genError}
                 lastResult={lastResult}
                 onGenerate={onGenerate}
+                validation={validation}
+                validating={validating}
+                onRevalidate={runValidation}
+                onSync={onSync}
+                syncing={syncing}
               />
             )}
 
@@ -862,6 +896,7 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 
 function StepGenerate({
   state, generating, genError, lastResult, onGenerate,
+  validation, validating, onRevalidate, onSync, syncing,
 }: {
   state: WizardState;
   generating: boolean;
@@ -874,14 +909,20 @@ function StepGenerate({
     reportFileName: string;
   } | null;
   onGenerate: () => void;
-
+  validation: ValidationReport | null;
+  validating: boolean;
+  onRevalidate: () => void;
+  onSync: () => void;
+  syncing: boolean;
 }) {
   const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
+  const canGenerate = !!validation?.ok && !generating && !validating;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Revisar e gerar</CardTitle>
-        <CardDescription>Validação anti-crash antes do download. O relatório .txt é criado junto.</CardDescription>
+        <CardDescription>Confira as validações antes de baixar o .3mf. Só liberamos o download se tudo estiver íntegro.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
@@ -892,12 +933,26 @@ function StepGenerate({
           <div><strong>Ironing:</strong> {effectiveIroning}</div>
         </div>
 
+        <ValidationSummary
+          report={validation}
+          loading={validating}
+          onRevalidate={onRevalidate}
+          onSync={onSync}
+          syncing={syncing}
+        />
+
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onGenerate} disabled={generating}>
+          <Button onClick={onGenerate} disabled={!canGenerate}>
             <Download className="w-4 h-4 mr-2" />
-            {generating ? "Gerando..." : "Gerar .3mf"}
+            {generating ? "Gerando..." : validating ? "Validando..." : "Gerar .3mf"}
           </Button>
+          {!canGenerate && !validating && (
+            <span className="text-xs text-muted-foreground self-center">
+              {validation?.errors.length ? "Corrija os itens acima para liberar o download." : "Aguardando validação..."}
+            </span>
+          )}
         </div>
+
 
         {genError && (
           <Alert variant="destructive">
@@ -976,5 +1031,125 @@ function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (
         </ScrollArea>
       </CardContent>
     </Card>
+  );
+}
+
+function ValidationSummary({
+  report, loading, onRevalidate, onSync, syncing,
+}: {
+  report: ValidationReport | null;
+  loading: boolean;
+  onRevalidate: () => void;
+  onSync: () => void;
+  syncing: boolean;
+}) {
+  if (loading && !report) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-3 text-sm text-muted-foreground flex items-center gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin" /> Validando integridade do .3mf...
+      </div>
+    );
+  }
+  if (!report) return null;
+
+  const dss = report.dssSlots;
+  const dssOk = dss.length === 3;
+  const keysOk = report.keyCount > 100;
+
+  const Item = ({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) => (
+    <li className="flex items-start gap-2 text-sm">
+      {ok ? <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          : <XCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
+      <div className="min-w-0">
+        <div className="font-medium">{label}</div>
+        {detail && <div className="text-xs text-muted-foreground break-words">{detail}</div>}
+      </div>
+    </li>
+  );
+
+  return (
+    <div className={`rounded-2xl border p-3 space-y-3 ${report.ok ? "border-primary/40 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          {report.ok
+            ? <><CheckCircle2 className="w-4 h-4 text-primary" /> Tudo pronto para gerar</>
+            : <><AlertTriangle className="w-4 h-4 text-destructive" /> Validação encontrou problemas</>}
+        </div>
+        <Button size="sm" variant="ghost" onClick={onRevalidate} disabled={loading}>
+          <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
+          Revalidar
+        </Button>
+      </div>
+
+      <ul className="space-y-2">
+        <Item
+          ok={dssOk}
+          label="different_settings_to_system na ordem [process, filament, printer]"
+          detail={
+            dssOk
+              ? `process: ${dss.process.length} · filament: ${dss.filament.length} · printer: ${dss.printer.length}`
+              : `Encontrado ${dss.length} slot(s) — esperado 3.`
+          }
+        />
+        <Item
+          ok={keysOk}
+          label="Metadata/project_settings.config completo"
+          detail={`${report.keyCount} chaves · mínimo 100 · linhagem: ${report.processLeaf ?? "—"} / ${report.filamentLeaf ?? "—"}`}
+        />
+        <Item
+          ok={report.plateOk}
+          label="Metadata/plate_1.json íntegro"
+          detail={report.plateInfo ? `nozzle_diameter=${report.plateInfo.nozzle} · version=${report.plateInfo.version}` : "JSON ausente ou inválido."}
+        />
+      </ul>
+
+      {(dssOk && (dss.process.length > 0 || dss.filament.length > 0)) && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+            Ver chaves sobrescritas ({dss.process.length + dss.filament.length + dss.printer.length})
+          </summary>
+          <div className="mt-2 space-y-2 font-mono text-[11px]">
+            {dss.process.length > 0 && (
+              <div><span className="text-muted-foreground">process:</span> {dss.process.join(", ")}</div>
+            )}
+            {dss.filament.length > 0 && (
+              <div><span className="text-muted-foreground">filament:</span> {dss.filament.join(", ")}</div>
+            )}
+            {dss.printer.length > 0 && (
+              <div><span className="text-muted-foreground">printer:</span> {dss.printer.join(", ")}</div>
+            )}
+          </div>
+        </details>
+      )}
+
+      {report.warnings.length > 0 && (
+        <div className="text-xs text-muted-foreground flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            {report.warnings.map((w, i) => <div key={i}>{w}</div>)}
+          </div>
+        </div>
+      )}
+
+      {report.errors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="w-4 h-4" />
+          <AlertTitle>Corrija antes de baixar</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {report.errors.map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+            {report.needsSync && (
+              <div className="mt-3">
+                <Button size="sm" onClick={onSync} disabled={syncing}>
+                  <Github className="w-4 h-4 mr-2" />
+                  {syncing ? "Sincronizando..." : "Aprender com o GitHub e revalidar"}
+                </Button>
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
   );
 }
