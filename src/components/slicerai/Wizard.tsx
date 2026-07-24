@@ -247,7 +247,7 @@ export function Wizard() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-[720px] mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Hexagon className="w-7 h-7 text-primary" strokeWidth={2.5} />
             <div>
@@ -269,7 +269,7 @@ export function Wizard() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-[720px] mx-auto px-4 py-6 space-y-6">
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">Etapa {step} de {STEPS.length}: {STEPS[step - 1].label}</span>
@@ -296,7 +296,7 @@ export function Wizard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <div className="space-y-4">
             {step === 1 && <StepFile onFile={handleFile} mesh={state.mesh} />}
             {step === 2 && (
@@ -394,7 +394,7 @@ export function Wizard() {
           </div>
         </div>
       </div>
-      <footer className="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-muted-foreground">
+      <footer className="max-w-[720px] mx-auto px-4 py-8 text-center text-xs text-muted-foreground">
         SlicerAI · 100% client-side · Os valores de flow são ponto de partida — calibre em 1 spool.
       </footer>
     </div>
