@@ -135,6 +135,18 @@ export interface GenerateResult {
     process: Record<string, unknown>;
     filament: Record<string, unknown>;
   };
+  report: {
+    blob: Blob;
+    fileName: string;
+    text: string;
+  };
+  zipBlob: Blob;
+  zipFileName: string;
+}
+
+function resolveIroningType(state: WizardState): "no ironing" | "top" | "topmost" | "solid" {
+  if (state.ironing.type) return state.ironing.type;
+  return state.purpose === "decoracao" ? "top" : "no ironing";
 }
 
 function assemble(
