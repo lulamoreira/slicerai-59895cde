@@ -352,11 +352,20 @@ export function Wizard() {
                   Próxima
                 </Button>
               ) : (
-                <Button onClick={onGenerate} disabled={generating}>
-                  {generating ? "Gerando..." : "Gerar .3mf"}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setState(initialState());
+                    setLastResult(null);
+                    setGenError(null);
+                    setStep(1);
+                  }}
+                >
+                  Recomeçar
                 </Button>
               )}
             </div>
+
           </div>
 
           <div className="space-y-3">
