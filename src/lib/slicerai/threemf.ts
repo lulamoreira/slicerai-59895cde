@@ -262,11 +262,37 @@ function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[]
   for (const bad of ["type", "inherits", "setting_id", "instantiation"]) {
     if (bad in cfg) errors.push(`cfg contém chave proibida: ${bad}`);
   }
+  for (const req of ["printer_settings_id", "print_settings_id", "filament_settings_id", "nozzle_diameter", "curr_bed_type", "filament_colour"]) {
+    if (!(req in cfg)) errors.push(`cfg sem chave obrigatória: ${req}`);
+  }
   if (!Array.isArray(cfg.filament_colour) || (cfg.filament_colour as unknown[]).length === 0) {
     errors.push("filament_colour ausente.");
   }
+  // different_settings_to_system: ordem obrigatória [process, filament, printer]
+  const dss = cfg.different_settings_to_system;
+  if (!Array.isArray(dss)) {
+    errors.push("different_settings_to_system ausente ou não é array.");
+  } else if (dss.length !== 3) {
+    errors.push(`different_settings_to_system deve ter 3 slots [process, filament, printer]; encontrado ${dss.length}.`);
+  } else if (dss.some((s) => typeof s !== "string")) {
+    errors.push("different_settings_to_system deve conter apenas strings (ordem: process, filament, printer).");
+  }
   if (!VALID_BEDS.has(state.bed)) errors.push(`curr_bed_type inválido: ${state.bed}`);
   if (!state.color || !/^#[0-9A-Fa-f]{6}$/.test(state.color)) errors.push("Cor do filamento é obrigatória (#RRGGBB).");
+  return errors;
+}
+
+function validatePlate1(json: string): string[] {
+  const errors: string[] = [];
+  try {
+    const p = JSON.parse(json) as Record<string, unknown>;
+    if (typeof p.nozzle_diameter !== "number" || !(p.nozzle_diameter > 0)) {
+      errors.push("plate_1.json: nozzle_diameter inválido.");
+    }
+    if (p.version !== 2) errors.push("plate_1.json: version deve ser 2.");
+  } catch {
+    errors.push("plate_1.json: JSON inválido.");
+  }
   return errors;
 }
 
@@ -317,6 +343,9 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
 </config>`;
 
   const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(printer.printerVariant), version: 2 });
+
+  const plateErrors = validatePlate1(plate1);
+  if (plateErrors.length) throw new Error(`Validação falhou:\n- ${plateErrors.join("\n- ")}`);
 
   const zip = new JSZip();
   zip.file("[Content_Types].xml", CONTENT_TYPES);
