@@ -7,7 +7,9 @@ export interface STLMesh {
   bbox: { min: Vec3; max: Vec3; size: Vec3 };
   volumeMm3: number;
   fileName: string;
+  sourceBuffer?: ArrayBuffer; // original STL bytes, kept in memory for reuse (history)
 }
+
 
 export interface Printer {
   id: string; // printer_settings_id, ex: "Bambu Lab A1 0.4 nozzle"
