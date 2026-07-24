@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
   Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
+  CheckCircle2, XCircle, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
