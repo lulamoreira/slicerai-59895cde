@@ -296,6 +296,95 @@ function validatePlate1(json: string): string[] {
   return errors;
 }
 
+export interface ValidationReport {
+  ok: boolean;
+  needsSync: boolean;
+  keyCount: number;
+  dssSlots: { process: string[]; filament: string[]; printer: string[]; length: number };
+  plateOk: boolean;
+  plateInfo: { nozzle: number; version: number } | null;
+  processLeaf: string | null;
+  filamentLeaf: string | null;
+  errors: string[];
+  warnings: string[];
+}
+
+function emptyReport(errors: string[], warnings: string[] = [], needsSync = false): ValidationReport {
+  return {
+    ok: false,
+    needsSync,
+    keyCount: 0,
+    dssSlots: { process: [], filament: [], printer: [], length: 0 },
+    plateOk: false,
+    plateInfo: null,
+    processLeaf: null,
+    filamentLeaf: null,
+    errors,
+    warnings,
+  };
+}
+
+export async function previewValidation(state: WizardState): Promise<ValidationReport> {
+  if (!state.mesh || !state.printer || !state.material || !state.purpose) {
+    return emptyReport(["Complete as etapas anteriores (STL, impressora, material e finalidade)."]);
+  }
+  const supportOn =
+    state.supportMode === "off" ? false : state.supportMode === "auto" ? (state.analysis?.needsSupport ?? false) : true;
+  const supportType: "normal" | "tree" =
+    state.supportMode === "tree" ? "tree" : state.supportMode === "normal" ? "normal" : state.analysis?.suggestedType === "tree" ? "tree" : "normal";
+  const sup = supportConfig(state.material, supportType, supportOn);
+
+  let cfg: Record<string, unknown>;
+  let processLeaf = "";
+  let filamentLeaf = "";
+  try {
+    const res = await assembleCfg(state, state.printer, state.material, sup, state.bed);
+    cfg = res.cfg;
+    processLeaf = res.processLeaf;
+    filamentLeaf = res.filamentLeaf;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const isNetwork = /fetch|network|404|offline|preset/i.test(msg);
+    return emptyReport([`Falha ao montar configuração: ${msg}`], [], isNetwork);
+  }
+
+  const cfgErrors = validateCfg(cfg, state);
+  const plate1 = JSON.stringify({ nozzle_diameter: parseFloat(state.printer.printerVariant), version: 2 });
+  const plateErrors = validatePlate1(plate1);
+
+  const dssRaw = cfg.different_settings_to_system;
+  const dssArr = Array.isArray(dssRaw) ? (dssRaw as unknown[]).map((s) => (typeof s === "string" ? s : "")) : [];
+  const split = (i: number) => (dssArr[i] ? dssArr[i].split(";").filter(Boolean) : []);
+  const dssSlots = {
+    process: split(0),
+    filament: split(1),
+    printer: split(2),
+    length: dssArr.length,
+  };
+
+  const keyCount = Object.keys(cfg).length;
+  const plateInfo = plateErrors.length === 0 ? { nozzle: parseFloat(state.printer.printerVariant), version: 2 } : null;
+  const warnings: string[] = [];
+  if (dssSlots.process.length === 0 && dssSlots.filament.length === 0) {
+    warnings.push("Nenhum override detectado — o .3mf usará somente os defaults do preset base.");
+  }
+
+  const needsSync = cfgErrors.some((e) => /incompleto|Aprender com o GitHub/.test(e));
+  const errors = [...cfgErrors, ...plateErrors];
+
+  return {
+    ok: errors.length === 0,
+    needsSync,
+    keyCount,
+    dssSlots,
+    plateOk: plateErrors.length === 0,
+    plateInfo,
+    processLeaf,
+    filamentLeaf,
+    errors,
+    warnings,
+  };
+
 export async function generate3mfAsync(state: WizardState): Promise<GenerateResult> {
   if (!state.mesh || !state.printer || !state.material || !state.purpose) {
     throw new Error("Estado incompleto para geração.");
