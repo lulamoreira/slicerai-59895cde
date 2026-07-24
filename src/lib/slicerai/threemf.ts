@@ -407,19 +407,17 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
     mimeType: "model/3mf",
   });
 
-  const baseName = state.mesh.fileName.replace(/\.stl$/i, "") || "modelo";
-  const fileName = `${baseName}_SlicerAI.3mf`;
+  const modelBase = sanitizeName(state.mesh.fileName.replace(/\.stl$/i, "") || "modelo");
+  const printerShort = shortPrinterName(printer.printerModel);
+  const materialShort = sanitizeName(material.id);
+  const purposeShort = capitalizePurpose(state.purpose!);
+  const baseName = `${modelBase}_${printerShort}_${materialShort}_${purposeShort}`;
+  const fileName = `${baseName}.3mf`;
 
   const summary = buildSummary(state, printer, material, sup, transformed.size, built.processName, built.filamentName);
   const reportText = buildReport(state, printer, material, sup, transformed.size, built, resolveIroningType(state));
   const reportFileName = `${baseName}_LEIA-ME.txt`;
   const reportBlob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
-
-  const bundle = new JSZip();
-  bundle.file(fileName, blob);
-  bundle.file(reportFileName, reportText);
-  const zipBlob = await bundle.generateAsync({ type: "blob", compression: "DEFLATE" });
-  const zipFileName = `${baseName}_SlicerAI.zip`;
 
   return {
     blob,
@@ -430,10 +428,31 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
     size: transformed.size,
     settings: { project: built.project, process: built.process, filament: built.filament },
     report: { blob: reportBlob, fileName: reportFileName, text: reportText },
-    zipBlob,
-    zipFileName,
   };
 }
+
+function sanitizeName(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_]/g, "");
+}
+
+const PRINTER_SHORT_MAP: Record<string, string> = {
+  "Bambu Lab X1 Carbon": "X1C",
+};
+
+function shortPrinterName(model: string): string {
+  if (PRINTER_SHORT_MAP[model]) return PRINTER_SHORT_MAP[model];
+  return sanitizeName(model.replace(/^Bambu Lab\s*/i, "").replace(/\s+/g, ""));
+}
+
+function capitalizePurpose(p: string): string {
+  const clean = p.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
 
 function buildSummary(
   state: WizardState,
