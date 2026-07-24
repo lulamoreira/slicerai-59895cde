@@ -191,6 +191,12 @@ export function Wizard() {
 
   const onGenerate = useCallback(async () => {
     setGenError(null);
+    const { mesh, printer, material, purpose } = state;
+    if (!mesh || !printer || !material || !purpose) {
+      setGenError("Complete STL, impressora, material e finalidade antes de gerar.");
+      toast.error("Estado incompleto para geração");
+      return;
+    }
     setGenerating(true);
     try {
       const res = await generate3mfAsync(state);
@@ -207,10 +213,10 @@ export function Wizard() {
       const entry: HistoryEntry = {
         id,
         createdAt: Date.now(),
-        fileName: state.mesh!.fileName,
-        printerId: state.printer!.id,
-        materialId: state.material!.id,
-        purpose: state.purpose!,
+        fileName: mesh.fileName,
+        printerId: printer.id,
+        materialId: material.id,
+        purpose,
         color: state.color,
         supportMode: state.supportMode,
         settingsJson: JSON.stringify(res.settings),
@@ -223,7 +229,7 @@ export function Wizard() {
       };
       // Persist original STL bytes for reuse from history
       try {
-        await putStl(id, state.mesh!.sourceBuffer ?? new ArrayBuffer(0));
+        await putStl(id, mesh.sourceBuffer ?? new ArrayBuffer(0));
       } catch { /* ignore */ }
       saveHistory(entry);
       setHistory(loadHistory());
