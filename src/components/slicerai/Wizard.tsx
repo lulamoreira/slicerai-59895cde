@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
-  Copy, RefreshCw, Github, History as HistoryIcon, FileJson, Hexagon, AlertTriangle,
+  Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import {
   loadPrinters, MATERIALS, OPEN_PRINTERS, syncGithub, getUpdatedAt,
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
-import { generate3mfAsync, exportPresetsJson } from "@/lib/slicerai/threemf";
+import { generate3mfAsync } from "@/lib/slicerai/threemf";
 import { loadHistory, saveHistory } from "@/lib/slicerai/storage";
 import type {
   HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
@@ -69,16 +69,38 @@ function initialState(): WizardState {
   };
 }
 
+const LS_LAST_PRINTER = "slicerai.lastPrinterId";
+
 export function Wizard() {
   const [step, setStep] = useState(1);
-  const [state, setState] = useState<WizardState>(initialState);
   const [printers, setPrinters] = useState<Printer[]>(() => loadPrinters());
+  const [state, setState] = useState<WizardState>(() => {
+    const s = initialState();
+    try {
+      const lastId = localStorage.getItem(LS_LAST_PRINTER);
+      const list = loadPrinters();
+      const def = list.find((p) => p.id === lastId)
+        ?? list.find((p) => p.id === "Bambu Lab A1 0.4 nozzle")
+        ?? list[0]
+        ?? null;
+      s.printer = def;
+    } catch { /* ignore */ }
+    return s;
+  });
   const [syncing, setSyncing] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(() => getUpdatedAt());
   const [analyzing, setAnalyzing] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
 
   const patch = useCallback((p: Partial<WizardState>) => setState((s) => ({ ...s, ...p })), []);
+
+  // Persist last selected printer
+  useEffect(() => {
+    if (state.printer?.id) {
+      try { localStorage.setItem(LS_LAST_PRINTER, state.printer.id); } catch { /* ignore */ }
+    }
+  }, [state.printer?.id]);
+
 
   const chosenOri = useMemo(
     () => state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? null,
@@ -225,7 +247,7 @@ export function Wizard() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-[720px] mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Hexagon className="w-7 h-7 text-primary" strokeWidth={2.5} />
             <div>
@@ -247,7 +269,7 @@ export function Wizard() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-[720px] mx-auto px-4 py-6 space-y-6">
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">Etapa {step} de {STEPS.length}: {STEPS[step - 1].label}</span>
@@ -274,7 +296,7 @@ export function Wizard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <div className="space-y-4">
             {step === 1 && <StepFile onFile={handleFile} mesh={state.mesh} />}
             {step === 2 && (
@@ -309,17 +331,9 @@ export function Wizard() {
                 genError={genError}
                 lastResult={lastResult}
                 onGenerate={onGenerate}
-                onExportJson={() => {
-                  try {
-                    const blob = exportPresetsJson(state);
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = "slicerai_presets.json"; a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (e) { toast.error((e as Error).message); }
-                }}
               />
             )}
+
 
             <div className="flex justify-between gap-2 pt-2">
               <Button variant="outline" onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1}>
@@ -380,7 +394,7 @@ export function Wizard() {
           </div>
         </div>
       </div>
-      <footer className="max-w-7xl mx-auto px-4 py-8 text-center text-xs text-muted-foreground">
+      <footer className="max-w-[720px] mx-auto px-4 py-8 text-center text-xs text-muted-foreground">
         SlicerAI · 100% client-side · Os valores de flow são ponto de partida — calibre em 1 spool.
       </footer>
     </div>
@@ -786,7 +800,7 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 }
 
 function StepGenerate({
-  state, generating, genError, lastResult, onGenerate, onExportJson,
+  state, generating, genError, lastResult, onGenerate,
 }: {
   state: WizardState;
   generating: boolean;
@@ -801,7 +815,7 @@ function StepGenerate({
     zipFileName: string;
   } | null;
   onGenerate: () => void;
-  onExportJson: () => void;
+
 }) {
   const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
   return (
@@ -823,9 +837,6 @@ function StepGenerate({
           <Button onClick={onGenerate} disabled={generating}>
             <Download className="w-4 h-4 mr-2" />
             {generating ? "Gerando..." : "Gerar .3mf + relatório"}
-          </Button>
-          <Button variant="outline" onClick={onExportJson}>
-            <FileJson className="w-4 h-4 mr-2" /> Exportar presets (.json)
           </Button>
         </div>
 
