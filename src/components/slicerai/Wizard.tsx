@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
-  Copy, RefreshCw, Github, History as HistoryIcon, FileJson, Hexagon, AlertTriangle,
+  Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
