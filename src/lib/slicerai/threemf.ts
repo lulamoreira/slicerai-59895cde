@@ -263,12 +263,8 @@ function assemble(
     return out;
   };
 
-  const processParamKeys = Object.keys(paramsOnly(process)).filter(
-    (k) => k !== "version" && k !== "print_settings_id",
-  );
-  const filamentParamKeys = Object.keys(paramsOnly(filament)).filter(
-    (k) => k !== "version" && k !== "filament_settings_id",
-  );
+
+
 
   const projectLineage: Record<string, unknown> = {
     from: "User",
