@@ -778,7 +778,7 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 }
 
 function StepGenerate({
-  state, generating, genError, lastResult, onGenerate, onExportJson,
+  state, generating, genError, lastResult, onGenerate,
 }: {
   state: WizardState;
   generating: boolean;
@@ -793,7 +793,7 @@ function StepGenerate({
     zipFileName: string;
   } | null;
   onGenerate: () => void;
-  onExportJson: () => void;
+
 }) {
   const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
   return (
