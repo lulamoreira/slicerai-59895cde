@@ -247,7 +247,31 @@ function assemble(
     filament_retraction_length: [String(material.retraction)],
   };
 
-  const project: Record<string, unknown> = {
+  const PRESET_META = new Set([
+    "type",
+    "name",
+    "inherits",
+    "setting_id",
+    "instantiation",
+    "compatible_printers",
+    "from",
+    "is_custom_defined",
+    "filament_id",
+  ]);
+  const paramsOnly = (o: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) if (!PRESET_META.has(k)) out[k] = v;
+    return out;
+  };
+
+  const processParamKeys = Object.keys(paramsOnly(process)).filter(
+    (k) => k !== "version" && k !== "print_settings_id",
+  );
+  const filamentParamKeys = Object.keys(paramsOnly(filament)).filter(
+    (k) => k !== "version" && k !== "filament_settings_id",
+  );
+
+  const projectLineage: Record<string, unknown> = {
     from: "User",
     name: `SlicerAI Project ${timestamp}`,
     version: VERSION,
@@ -266,11 +290,18 @@ function assemble(
     default_print_profile: processInherits,
     default_filament_profile: [filamentInherits],
     inherits_group: ["", "", ""],
-    different_settings_to_system: ["", "", ""],
+    different_settings_to_system: [
+      processParamKeys.join(";"),
+      "",
+      filamentParamKeys.join(";"),
+    ],
     curr_bed_type: bed,
-    // include process + filament settings inline for convenience
-    ...process,
-    ...filament,
+  };
+
+  const project: Record<string, unknown> = {
+    ...projectLineage,
+    ...paramsOnly(process),
+    ...paramsOnly(filament),
   };
 
   return { project, process, filament, processName, filamentName };
