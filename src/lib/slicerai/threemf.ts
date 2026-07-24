@@ -380,6 +380,15 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
   const fileName = `${baseName}_SlicerAI.3mf`;
 
   const summary = buildSummary(state, printer, material, sup, transformed.size, built.processName, built.filamentName);
+  const reportText = buildReport(state, printer, material, sup, transformed.size, built, resolveIroningType(state));
+  const reportFileName = `${baseName}_LEIA-ME.txt`;
+  const reportBlob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+
+  const bundle = new JSZip();
+  bundle.file(fileName, blob);
+  bundle.file(reportFileName, reportText);
+  const zipBlob = await bundle.generateAsync({ type: "blob", compression: "DEFLATE" });
+  const zipFileName = `${baseName}_SlicerAI.zip`;
 
   return {
     blob,
@@ -389,6 +398,9 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
     filamentName: built.filamentName,
     size: transformed.size,
     settings: { project: built.project, process: built.process, filament: built.filament },
+    report: { blob: reportBlob, fileName: reportFileName, text: reportText },
+    zipBlob,
+    zipFileName,
   };
 }
 
