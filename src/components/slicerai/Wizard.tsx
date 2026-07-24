@@ -309,17 +309,9 @@ export function Wizard() {
                 genError={genError}
                 lastResult={lastResult}
                 onGenerate={onGenerate}
-                onExportJson={() => {
-                  try {
-                    const blob = exportPresetsJson(state);
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = "slicerai_presets.json"; a.click();
-                    URL.revokeObjectURL(url);
-                  } catch (e) { toast.error((e as Error).message); }
-                }}
               />
             )}
+
 
             <div className="flex justify-between gap-2 pt-2">
               <Button variant="outline" onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1}>
