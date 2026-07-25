@@ -17,13 +17,13 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminLayout,
 });
 
-const TABS = [
+const TABS: Array<{ to: "/admin" | "/admin/usuarios" | "/admin/planos" | "/admin/cupons" | "/admin/configuracoes"; label: string; Icon: typeof BarChart3; exact?: boolean }> = [
   { to: "/admin", label: "Visão geral", Icon: BarChart3, exact: true },
   { to: "/admin/usuarios", label: "Usuários", Icon: Users },
   { to: "/admin/planos", label: "Planos", Icon: Package },
   { to: "/admin/cupons", label: "Cupons", Icon: TicketPercent },
   { to: "/admin/configuracoes", label: "Configurações", Icon: Settings },
-] as const;
+];
 
 function AdminLayout() {
   const nav = useNavigate();
