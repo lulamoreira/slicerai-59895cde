@@ -417,6 +417,7 @@ export function Wizard() {
                     setLastResult(null);
                     setGenError(null);
                     setStep(1);
+                    void runSilentSync();
                   }}
                 >
                   Recomeçar
