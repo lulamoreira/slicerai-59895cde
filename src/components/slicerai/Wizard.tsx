@@ -370,6 +370,7 @@ export function Wizard() {
             {step === 3 && (
               <StepMaterial
                 state={state}
+                materials={materialsForPrinter}
                 openWarning={!!openWarning}
                 onChange={patch}
               />
@@ -461,7 +462,13 @@ export function Wizard() {
 
             <HistoryCard history={history} onReuse={async (entry) => {
               const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
-              const m = MATERIALS.find((x) => x.id === entry.materialId) ?? state.material;
+              let m: MaterialBase | null = null;
+              if (p) {
+                const list = listMaterialsForPrinter(p);
+                m = list.find((x) => x.id === entry.materialId)
+                  ?? (entry.materialId.includes("@BBL") ? buildMaterialFromName(entry.materialId, p.suffix) : null)
+                  ?? state.material;
+              }
               let mesh: STLMesh | null = null;
               try {
                 const buf = await getStl(entry.id);
@@ -631,24 +638,38 @@ function StepPrinter({
 }
 
 function StepMaterial({
-  state, openWarning, onChange,
-}: { state: WizardState; openWarning: boolean; onChange: (p: Partial<WizardState>) => void }) {
+  state, materials, openWarning, onChange,
+}: {
+  state: WizardState;
+  materials: MaterialBase[];
+  openWarning: boolean;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
+  const empty = materials.length === 0;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Palette className="w-4 h-4" /> Material e cor</CardTitle>
+        <CardDescription>
+          {empty
+            ? "Sincronizando catálogo…"
+            : `${materials.length} materiais disponíveis para ${state.printer?.displayName ?? "esta impressora"}.`}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label>Material</Label>
           <Select
             value={state.material?.id ?? ""}
-            onValueChange={(id) => onChange({ material: MATERIALS.find((m) => m.id === id) ?? null })}
+            onValueChange={(id) => onChange({ material: materials.find((m) => m.id === id) ?? null })}
+            disabled={empty}
           >
-            <SelectTrigger><SelectValue placeholder="Selecione o material" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={empty ? "Aguardando sincronização…" : "Selecione o material"} /></SelectTrigger>
             <SelectContent>
-              {MATERIALS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+              {materials.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}{m.highFlow ? " · HF" : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
