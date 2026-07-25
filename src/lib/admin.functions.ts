@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-async function assertAdmin(context: { supabase: ReturnType<typeof requireSupabaseAuth> extends never ? never : any; userId: string }) {
+type AdminCtx = { supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }; userId: string };
+async function assertAdmin(context: AdminCtx) {
   const { data, error } = await context.supabase.rpc("is_admin_or_owner", { _user_id: context.userId });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: acesso apenas para administradores.");
