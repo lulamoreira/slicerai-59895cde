@@ -1,6 +1,5 @@
-import { createFileRoute, useServerFn } from "@tanstack/react-router";
-// useServerFn lives in @tanstack/react-start; re-alias if needed
-import { useServerFn as useSF } from "@tanstack/react-start";
+import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -37,8 +36,7 @@ import {
   deleteUser,
 } from "@/lib/admin.functions";
 
-// tanstack forwards useServerFn from react-start; use whichever is available
-const _useServerFn = useServerFn ?? useSF;
+const _useServerFn = useServerFn;
 
 export const Route = createFileRoute("/_authenticated/admin/usuarios")({
   component: UsersPage,
