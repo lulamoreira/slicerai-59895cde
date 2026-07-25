@@ -16,21 +16,27 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          app_name: string
           created_at: string
           id: boolean
           trial_days: number
+          trial_welcome_message: string
           updated_at: string
         }
         Insert: {
+          app_name?: string
           created_at?: string
           id?: boolean
           trial_days?: number
+          trial_welcome_message?: string
           updated_at?: string
         }
         Update: {
+          app_name?: string
           created_at?: string
           id?: boolean
           trial_days?: number
+          trial_welcome_message?: string
           updated_at?: string
         }
         Relationships: []
