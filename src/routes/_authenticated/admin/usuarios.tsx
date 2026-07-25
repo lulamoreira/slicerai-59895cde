@@ -36,7 +36,6 @@ import {
   deleteUser,
 } from "@/lib/admin.functions";
 
-const _useServerFn = useServerFn;
 
 export const Route = createFileRoute("/_authenticated/admin/usuarios")({
   component: UsersPage,
@@ -47,7 +46,7 @@ type Row = Awaited<ReturnType<typeof listAdminUsers>>[number];
 function UsersPage() {
   const qc = useQueryClient();
   const { user: me } = useSession();
-  const fetchUsers = _useServerFn(listAdminUsers);
+  const fetchUsers = useServerFn(listAdminUsers);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -72,10 +71,10 @@ function UsersPage() {
     });
   }, [data, roleFilter, statusFilter, search]);
 
-  const roleFn = _useServerFn(updateUserRole);
-  const extFn = _useServerFn(extendTrial);
-  const subFn = _useServerFn(setSubscriptionStatus);
-  const delFn = _useServerFn(deleteUser);
+  const roleFn = useServerFn(updateUserRole);
+  const extFn = useServerFn(extendTrial);
+  const subFn = useServerFn(setSubscriptionStatus);
+  const delFn = useServerFn(deleteUser);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-users"] });
 
