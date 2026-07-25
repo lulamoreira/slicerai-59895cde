@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
-  Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
+  Copy, RefreshCw, History as HistoryIcon, Hexagon, AlertTriangle,
   CheckCircle2, XCircle, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Preview3D, LegendChip } from "./Preview3D";
 import { parseSTL } from "@/lib/slicerai/stl";
 import {
-  loadPrinters, MATERIALS, OPEN_PRINTERS, syncGithub, getUpdatedAt,
+  loadPrinters, OPEN_PRINTERS, getUpdatedAt, silentSync,
+  listMaterialsForPrinter, buildMaterialFromName,
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
 import { generate3mfAsync, previewValidation, type ValidationReport } from "@/lib/slicerai/threemf";
@@ -128,19 +129,37 @@ export function Wizard() {
     }
   }, [patch]);
 
-  const onSync = useCallback(async () => {
+  // Silent sync — never blocks the UI, never surfaces errors.
+  const runSilentSync = useCallback(async () => {
     setSyncing(true);
     try {
-      const r = await syncGithub();
+      await silentSync();
       setPrinters(loadPrinters());
       setSyncedAt(getUpdatedAt());
-      toast.success(`GitHub sincronizado: ${r.printers} impressoras, ${r.filaments} filamentos, ${r.processes} processos.`);
-    } catch (e) {
-      toast.error((e as Error).message);
     } finally {
       setSyncing(false);
     }
   }, []);
+
+  // Auto-sync on mount (fire-and-forget). silentSync() short-circuits if the
+  // local cache is fresh (<6h), so this is cheap on repeat visits.
+  useEffect(() => {
+    void runSilentSync();
+  }, [runSilentSync]);
+
+  // Dynamic materials list, derived from the master index for the selected printer.
+  const materialsForPrinter = useMemo<MaterialBase[]>(() => {
+    if (!state.printer) return [];
+    return listMaterialsForPrinter(state.printer);
+  }, [state.printer, syncedAt]);
+
+  // If the selected material doesn't fit the new printer, clear it.
+  useEffect(() => {
+    if (!state.material || !state.printer) return;
+    if (materialsForPrinter.length === 0) return;
+    const stillValid = materialsForPrinter.some((m) => m.id === state.material!.id);
+    if (!stillValid) patch({ material: null });
+  }, [materialsForPrinter, state.material, state.printer, patch]);
 
   const runAnalysis = useCallback(async () => {
     if (!state.mesh || !state.printer) return;
@@ -301,13 +320,9 @@ export function Wizard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onSync} disabled={syncing}>
-              <Github className="w-4 h-4 mr-2" />
-              {syncing ? "Sincronizando..." : "Aprender com o GitHub"}
-            </Button>
             {syncedAt && (
               <span className="text-xs text-muted-foreground hidden sm:inline">
-                Atualizado {new Date(syncedAt).toLocaleString("pt-BR")}
+                {syncing ? "Sincronizando…" : `Atualizado ${new Date(syncedAt).toLocaleString("pt-BR")}`}
               </span>
             )}
           </div>
@@ -355,6 +370,7 @@ export function Wizard() {
             {step === 3 && (
               <StepMaterial
                 state={state}
+                materials={materialsForPrinter}
                 openWarning={!!openWarning}
                 onChange={patch}
               />
@@ -379,7 +395,7 @@ export function Wizard() {
                 validation={validation}
                 validating={validating}
                 onRevalidate={runValidation}
-                onSync={onSync}
+                onSync={runSilentSync}
                 syncing={syncing}
               />
             )}
@@ -401,6 +417,7 @@ export function Wizard() {
                     setLastResult(null);
                     setGenError(null);
                     setStep(1);
+                    void runSilentSync();
                   }}
                 >
                   Recomeçar
@@ -446,7 +463,13 @@ export function Wizard() {
 
             <HistoryCard history={history} onReuse={async (entry) => {
               const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
-              const m = MATERIALS.find((x) => x.id === entry.materialId) ?? state.material;
+              let m: MaterialBase | null = null;
+              if (p) {
+                const list = listMaterialsForPrinter(p);
+                m = list.find((x) => x.id === entry.materialId)
+                  ?? (entry.materialId.includes("@BBL") ? buildMaterialFromName(entry.materialId, p.suffix) : null)
+                  ?? state.material;
+              }
               let mesh: STLMesh | null = null;
               try {
                 const buf = await getStl(entry.id);
@@ -616,24 +639,38 @@ function StepPrinter({
 }
 
 function StepMaterial({
-  state, openWarning, onChange,
-}: { state: WizardState; openWarning: boolean; onChange: (p: Partial<WizardState>) => void }) {
+  state, materials, openWarning, onChange,
+}: {
+  state: WizardState;
+  materials: MaterialBase[];
+  openWarning: boolean;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
+  const empty = materials.length === 0;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Palette className="w-4 h-4" /> Material e cor</CardTitle>
+        <CardDescription>
+          {empty
+            ? "Sincronizando catálogo…"
+            : `${materials.length} materiais disponíveis para ${state.printer?.displayName ?? "esta impressora"}.`}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label>Material</Label>
           <Select
             value={state.material?.id ?? ""}
-            onValueChange={(id) => onChange({ material: MATERIALS.find((m) => m.id === id) ?? null })}
+            onValueChange={(id) => onChange({ material: materials.find((m) => m.id === id) ?? null })}
+            disabled={empty}
           >
-            <SelectTrigger><SelectValue placeholder="Selecione o material" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={empty ? "Aguardando sincronização…" : "Selecione o material"} /></SelectTrigger>
             <SelectContent>
-              {MATERIALS.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+              {materials.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}{m.highFlow ? " · HF" : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1165,8 +1202,8 @@ function ValidationSummary({
             {report.needsSync && (
               <div className="mt-3">
                 <Button size="sm" onClick={onSync} disabled={syncing}>
-                  <Github className="w-4 h-4 mr-2" />
-                  {syncing ? "Sincronizando..." : "Aprender com o GitHub e revalidar"}
+                  <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Sincronizando…" : "Sincronizar e revalidar"}
                 </Button>
               </div>
             )}

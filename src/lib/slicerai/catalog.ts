@@ -1,11 +1,23 @@
-import type { MaterialBase, Printer } from "./types";
+// Dynamic catalog derived from the master BBL.json index.
+//
+// - Printers: every 0.X-nozzle entry in machine_list (no hard-coded list).
+// - Suffix ("@BBL <code>"): chosen by counting filament_list matches per
+//   candidate abbreviation — that self-corrects to whatever the repo uses.
+// - Materials: derived per-printer from filament_list (filtered by suffix).
+// - Processes: matched from process_list by layer + resolved suffix.
 
-const LS_PRINTERS = "slicerai.catalog.printers";
-const LS_MATERIALS = "slicerai.catalog.materials";
-const LS_PROCESS = "slicerai.catalog.process";
-const LS_UPDATED = "slicerai.catalog.updatedAt";
+import type { MaterialBase, Printer, Vec3 } from "./types";
+import {
+  getMasterIndexSync,
+  getMasterUpdatedAtSync,
+  syncMasterIndex,
+  type MasterEntry,
+  type MasterIndex,
+} from "./resolve";
 
-/** Known modelId mapping — required for slice_info.config. */
+// -------- Constants --------
+
+/** Known modelId — used only for slice_info; Bambu keys off printer_settings_id. */
 const MODEL_ID: Record<string, string> = {
   "Bambu Lab A1": "N2S",
   "Bambu Lab A1 mini": "N1",
@@ -18,219 +30,304 @@ const MODEL_ID: Record<string, string> = {
   "Bambu Lab H2S": "O1S",
 };
 
-/** Process preset compatibility — printers without their own presets fall back to these. */
-const PROCESS_COMPAT: Record<string, string> = {
+/** Fallback suffix map for printers with no dedicated presets yet. */
+const SUFFIX_COMPAT: Record<string, string> = {
   "@BBL P1S": "@BBL X1C",
   "@BBL X1": "@BBL X1C",
 };
 
-/** Filament preset compatibility — same fallback map. */
-const FILAMENT_COMPAT: Record<string, string> = {
-  "@BBL P1S": "@BBL X1C",
-  "@BBL X1": "@BBL X1C",
-};
+/** Enclosure-open models — used to warn about technical materials. */
+export const OPEN_PRINTERS = new Set([
+  "Bambu Lab A1",
+  "Bambu Lab A1 mini",
+  "Bambu Lab P1P",
+]);
+
+// -------- Seed (minimal offline fallback) --------
 
 export const SEED_PRINTERS: Printer[] = [
-  { id: "Bambu Lab A1 0.4 nozzle", displayName: "Bambu Lab A1", printerModel: "Bambu Lab A1", printerVariant: "0.4", modelId: "N2S", bed: [256, 256, 256], suffix: "@BBL A1" },
-  { id: "Bambu Lab A1 mini 0.4 nozzle", displayName: "Bambu Lab A1 mini", printerModel: "Bambu Lab A1 mini", printerVariant: "0.4", modelId: "N1", bed: [180, 180, 180], suffix: "@BBL A1M" },
-  { id: "Bambu Lab P1S 0.4 nozzle", displayName: "Bambu Lab P1S", printerModel: "Bambu Lab P1S", printerVariant: "0.4", modelId: "C11", bed: [256, 256, 256], suffix: "@BBL P1S" },
-  { id: "Bambu Lab P1P 0.4 nozzle", displayName: "Bambu Lab P1P", printerModel: "Bambu Lab P1P", printerVariant: "0.4", modelId: "C12", bed: [256, 256, 256], suffix: "@BBL P1P" },
-  { id: "Bambu Lab X1C 0.4 nozzle", displayName: "Bambu Lab X1 Carbon", printerModel: "Bambu Lab X1 Carbon", printerVariant: "0.4", modelId: "BL-P001", bed: [256, 256, 256], suffix: "@BBL X1C" },
-  { id: "Bambu Lab X1 0.4 nozzle", displayName: "Bambu Lab X1", printerModel: "Bambu Lab X1", printerVariant: "0.4", modelId: "BL-P002", bed: [256, 256, 256], suffix: "@BBL X1" },
+  {
+    id: "Bambu Lab A1 0.4 nozzle",
+    displayName: "Bambu Lab A1",
+    printerModel: "Bambu Lab A1",
+    printerVariant: "0.4",
+    modelId: "N2S",
+    bed: [256, 256, 256],
+    suffix: "@BBL A1",
+  },
+  {
+    id: "Bambu Lab X1 Carbon 0.4 nozzle",
+    displayName: "Bambu Lab X1 Carbon",
+    printerModel: "Bambu Lab X1 Carbon",
+    printerVariant: "0.4",
+    modelId: "BL-P001",
+    bed: [256, 256, 256],
+    suffix: "@BBL X1C",
+  },
 ];
 
-export const OPEN_PRINTERS = new Set(["Bambu Lab A1", "Bambu Lab A1 mini", "Bambu Lab P1P"]);
+// -------- Suffix + printer derivation --------
 
-/** Seed process bases so the app works offline (per real Bambu naming). */
-const SEED_PROCESS_BASES: string[] = [
-  // A1
-  "0.08mm Extra Fine @BBL A1",
-  "0.12mm Fine @BBL A1",
-  "0.16mm Optimal @BBL A1",
-  "0.20mm Standard @BBL A1",
-  "0.24mm Draft @BBL A1",
-  "0.28mm Extra Draft @BBL A1",
-  // A1 mini
-  "0.08mm Extra Fine @BBL A1M",
-  "0.12mm Fine @BBL A1M",
-  "0.16mm Optimal @BBL A1M",
-  "0.20mm Standard @BBL A1M",
-  "0.24mm Draft @BBL A1M",
-  "0.28mm Extra Draft @BBL A1M",
-  // P1P
-  "0.12mm Fine @BBL P1P",
-  "0.16mm Optimal @BBL P1P",
-  "0.20mm Standard @BBL P1P",
-  "0.24mm Draft @BBL P1P",
-  "0.28mm Extra Draft @BBL P1P",
-  // X1C (also used by P1S and X1 via PROCESS_COMPAT)
-  "0.08mm Extra Fine @BBL X1C",
-  "0.12mm Fine @BBL X1C",
-  "0.16mm Optimal @BBL X1C",
-  "0.20mm Standard @BBL X1C",
-  "0.24mm Draft @BBL X1C",
-  "0.28mm Extra Draft @BBL X1C",
-];
-
-/** Seed filament bases (the common Bambu materials for each suffix). */
-const SEED_FILAMENT_BASES: string[] = (() => {
-  const suffixes = ["@BBL A1", "@BBL A1M", "@BBL P1P", "@BBL X1C"];
-  const bases = [
-    "Bambu PLA Basic",
-    "Bambu PLA Silk",
-    "Bambu PETG Basic",
-    "Bambu PETG-CF",
-    "Bambu PLA-CF",
-    "Bambu ABS",
-    "Bambu ASA",
-    "Bambu TPU 95A",
-    "Bambu PA-CF",
-  ];
-  const out: string[] = [];
-  for (const s of suffixes) for (const b of bases) out.push(`${b} ${s}`);
-  return out;
-})();
-
-export const MATERIALS: MaterialBase[] = [
-  { id: "PLA", label: "PLA", filamentId: "GFA00", inheritsBaseName: "Bambu PLA Basic", nozzle: 220, bed: 55, volSpeed: 15, flow: 0.98, fanMin: 60, fanMax: 100, retraction: 0.8, filamentType: "PLA" },
-  { id: "PLA_SILK", label: "PLA Silk", filamentId: "GFA05", inheritsBaseName: "Bambu PLA Silk", nozzle: 225, bed: 55, volSpeed: 10, flow: 0.98, fanMin: 40, fanMax: 80, retraction: 0.8, filamentType: "PLA" },
-  // PETG anti-teia: subsequent 245°C, initial 250°C
-  { id: "PETG", label: "PETG", filamentId: "GFG00", inheritsBaseName: "Bambu PETG Basic", nozzle: 245, nozzleInitial: 250, bed: 70, volSpeed: 8, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0, filamentType: "PETG" },
-  { id: "ABS", label: "ABS", filamentId: "GFB00", inheritsBaseName: "Bambu ABS", nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0, fanMax: 30, retraction: 0.8, filamentType: "ABS", open: true },
-  { id: "ASA", label: "ASA", filamentId: "GFB01", inheritsBaseName: "Bambu ASA", nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0, fanMax: 30, retraction: 0.8, filamentType: "ASA", open: true },
-  { id: "TPU", label: "TPU", filamentId: "GFU01", inheritsBaseName: "Bambu TPU 95A", nozzle: 230, bed: 40, volSpeed: 3.5, flow: 0.95, fanMin: 40, fanMax: 80, retraction: 0.4, filamentType: "TPU" },
-  { id: "PLA_CF", label: "PLA-CF", filamentId: "GFA50", inheritsBaseName: "Bambu PLA-CF", nozzle: 230, bed: 55, volSpeed: 10, flow: 0.98, fanMin: 40, fanMax: 80, retraction: 0.8, filamentType: "PLA-CF" },
-  { id: "PETG_CF", label: "PETG-CF", filamentId: "GFG50", inheritsBaseName: "Bambu PETG-CF", nozzle: 260, bed: 70, volSpeed: 10, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0, filamentType: "PETG-CF" },
-  { id: "PA", label: "PA (Nylon)", filamentId: "GFN04", inheritsBaseName: "Bambu PA-CF", nozzle: 280, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, filamentType: "PA", open: true },
-];
-
-export function loadPrinters(): Printer[] {
-  let fromGithub: Printer[] = [];
-  try {
-    const raw = localStorage.getItem(LS_PRINTERS);
-    if (raw) fromGithub = JSON.parse(raw) as Printer[];
-  } catch { fromGithub = []; }
-  // Merge — dedupe by printerModel, seed wins (preserves canonical modelId).
-  const byModel = new Map<string, Printer>();
-  for (const p of fromGithub) byModel.set(p.printerModel, p);
-  for (const p of SEED_PRINTERS) byModel.set(p.printerModel, p);
-  return [...byModel.values()];
+function inferBed(name: string): Vec3 {
+  return /mini/i.test(name) ? [180, 180, 180] : [256, 256, 256];
 }
 
-export function loadFilamentBases(): string[] {
-  let synced: string[] = [];
-  try {
-    const raw = localStorage.getItem(LS_MATERIALS);
-    if (raw) synced = JSON.parse(raw) as string[];
-  } catch { synced = []; }
-  return Array.from(new Set([...SEED_FILAMENT_BASES, ...synced]));
+function extractNozzle(name: string): string {
+  const m = name.match(/(\d\.\d)\s*nozzle$/i);
+  return m ? m[1] : "0.4";
 }
 
-export function loadProcessBases(): string[] {
-  let synced: string[] = [];
-  try {
-    const raw = localStorage.getItem(LS_PROCESS);
-    if (raw) synced = JSON.parse(raw) as string[];
-  } catch { synced = []; }
-  return Array.from(new Set([...SEED_PROCESS_BASES, ...synced]));
+function stripPrefixNozzle(name: string): string {
+  return name.replace(/^Bambu Lab\s+/i, "").replace(/\s*\d\.\d\s*nozzle$/i, "").trim();
 }
 
-export function getUpdatedAt(): string | null {
-  try { return localStorage.getItem(LS_UPDATED); } catch { return null; }
+/** Candidate suffix codes for a machine name, from most literal to most abbreviated. */
+function suffixCandidates(machineName: string): string[] {
+  const core = stripPrefixNozzle(machineName);
+  const out = new Set<string>();
+  out.add(core);
+  // "A1 mini" → "A1M"; "P1 P" → "P1P".
+  out.add(core.replace(/\s+mini$/i, "M").replace(/\s+/g, ""));
+  // "X1 Carbon" → "X1C"; drop trailing words to single letter.
+  const words = core.split(/\s+/);
+  if (words.length > 1) {
+    const initials = words[0] + words.slice(1).map((w) => w[0]?.toUpperCase() ?? "").join("");
+    out.add(initials);
+    out.add(words[0]);
+  }
+  // Handle "H2 D" style: also try the first word alone.
+  return Array.from(out).filter(Boolean);
 }
 
-async function fetchAllPages(url: string): Promise<Array<{ name: string; type: string }>> {
-  const out: Array<{ name: string; type: string }> = [];
-  for (let page = 1; page < 20; page++) {
-    const r = await fetch(`${url}?per_page=100&page=${page}`, { headers: { Accept: "application/vnd.github+json" } });
-    if (r.status === 403) throw new Error("Rate limit do GitHub. Tente novamente em alguns minutos.");
-    if (!r.ok) throw new Error(`GitHub retornou ${r.status}`);
-    const data = (await r.json()) as Array<{ name: string; type: string }>;
-    if (!Array.isArray(data) || data.length === 0) break;
-    out.push(...data);
-    if (data.length < 100) break;
+/** Chooses the suffix whose "@BBL <code>" has the MOST filament entries. */
+function pickSuffix(machineName: string, filamentNames: string[]): string {
+  const cands = suffixCandidates(machineName);
+  let best = cands[0] ?? stripPrefixNozzle(machineName);
+  let bestCount = -1;
+  for (const c of cands) {
+    const suf = `@BBL ${c}`;
+    let n = 0;
+    for (const f of filamentNames) if (f.endsWith(` ${suf}`)) n++;
+    if (n > bestCount) {
+      bestCount = n;
+      best = c;
+    }
+  }
+  return `@BBL ${best}`;
+}
+
+function normalizeMachineEntries(index: MasterIndex): MasterEntry[] {
+  const seen = new Set<string>();
+  const out: MasterEntry[] = [];
+  for (const m of index.machine_list) {
+    if (!m?.name) continue;
+    if (/template/i.test(m.name)) continue;
+    if (!/0\.\d+\s+nozzle$/i.test(m.name)) continue;
+    // Only expose 0.4 nozzle variants (one printer per model).
+    if (!/0\.4\s+nozzle$/i.test(m.name)) continue;
+    const display = stripPrefixNozzle(m.name);
+    if (seen.has(display)) continue;
+    seen.add(display);
+    out.push(m);
   }
   return out;
 }
 
-function inferBedFromName(name: string): [number, number, number] {
-  const n = name.toLowerCase();
-  if (n.includes("mini")) return [180, 180, 180];
-  return [256, 256, 256];
-}
-
-function suffixFromName(name: string): string {
-  const cleaned = name.replace(/^Bambu Lab\s+/i, "").replace(/\s+\d+\.\d+\s+nozzle$/i, "");
-  return `@BBL ${cleaned}`;
-}
-
-export async function syncGithub(): Promise<{ printers: number; filaments: number; processes: number }> {
-  const base = "https://api.github.com/repos/bambulab/BambuStudio/contents/resources/profiles/BBL";
-  const [machines, filaments, processes] = await Promise.all([
-    fetchAllPages(`${base}/machine`),
-    fetchAllPages(`${base}/filament`),
-    fetchAllPages(`${base}/process`),
-  ]);
-
-  const byModel = new Map<string, Printer>();
+function buildPrintersFromMaster(index: MasterIndex): Printer[] {
+  const filamentNames = index.filament_list.map((f) => f.name);
+  const machines = normalizeMachineEntries(index);
+  const printers: Printer[] = [];
   for (const m of machines) {
-    if (m.type !== "file" || !m.name.endsWith(".json")) continue;
-    if (/template/i.test(m.name)) continue;
-    // ONLY the 0.4 nozzle variant — one file per model.
-    if (!/0\.4\s+nozzle\.json$/i.test(m.name)) continue;
-    const id = m.name.replace(/\.json$/i, "");
-    const displayName = id.replace(/\s+\d+\.\d+\s+nozzle$/i, "");
-    if (byModel.has(displayName)) continue;
-    byModel.set(displayName, {
-      id,
+    const displayName = stripPrefixNozzle(m.name);
+    const variant = extractNozzle(m.name);
+    const suffix = pickSuffix(m.name, filamentNames);
+    printers.push({
+      id: m.name,
       displayName,
       printerModel: displayName,
-      printerVariant: "0.4",
+      printerVariant: variant,
       modelId: MODEL_ID[displayName] ?? "",
-      bed: inferBedFromName(id),
-      suffix: suffixFromName(id),
+      bed: inferBed(m.name),
+      suffix,
       fromGithub: true,
     });
   }
-  const printers = [...byModel.values()];
-
-  const filamentNames = filaments
-    .filter((f) => f.type === "file" && f.name.endsWith(".json") && !/template/i.test(f.name))
-    .map((f) => f.name.replace(/\.json$/i, ""));
-  const processNames = processes
-    .filter((f) => f.type === "file" && f.name.endsWith(".json") && !/template/i.test(f.name))
-    .map((f) => f.name.replace(/\.json$/i, ""));
-
-  try {
-    localStorage.setItem(LS_PRINTERS, JSON.stringify(printers));
-    localStorage.setItem(LS_MATERIALS, JSON.stringify(filamentNames));
-    localStorage.setItem(LS_PROCESS, JSON.stringify(processNames));
-    localStorage.setItem(LS_UPDATED, new Date().toISOString());
-  } catch {
-    // storage may be full — data still returned for this session
-  }
-  return { printers: printers.length, filaments: filamentNames.length, processes: processNames.length };
+  // Sort alphabetically.
+  printers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return printers;
 }
+
+/** Merge master-derived printers with the seed (seed wins on missing fields). */
+export function loadPrinters(): Printer[] {
+  const index = getMasterIndexSync();
+  if (!index) return SEED_PRINTERS;
+  const derived = buildPrintersFromMaster(index);
+  const byModel = new Map<string, Printer>();
+  for (const p of derived) byModel.set(p.printerModel, p);
+  for (const s of SEED_PRINTERS) {
+    // If the master doesn't know the seed printer, still expose it.
+    if (!byModel.has(s.printerModel)) byModel.set(s.printerModel, s);
+  }
+  return Array.from(byModel.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+export function getUpdatedAt(): string | null {
+  return getMasterUpdatedAtSync();
+}
+
+// -------- Material derivation --------
+
+const TYPE_PATTERNS: Array<{ re: RegExp; type: string; id: string; label: string }> = [
+  { re: /PETG[- ]?CF/i, type: "PETG-CF", id: "PETG_CF", label: "PETG-CF" },
+  { re: /PETG[- ]?HF/i, type: "PETG", id: "PETG_HF", label: "PETG HF" },
+  { re: /PETG/i, type: "PETG", id: "PETG", label: "PETG" },
+  { re: /PLA[- ]?CF/i, type: "PLA-CF", id: "PLA_CF", label: "PLA-CF" },
+  { re: /PLA[- ]?Silk/i, type: "PLA", id: "PLA_SILK", label: "PLA Silk" },
+  { re: /PLA[- ]?Aero/i, type: "PLA", id: "PLA_AERO", label: "PLA Aero" },
+  { re: /PLA[- ]?Wood/i, type: "PLA", id: "PLA_WOOD", label: "PLA Wood" },
+  { re: /PLA[- ]?Matte/i, type: "PLA", id: "PLA_MATTE", label: "PLA Matte" },
+  { re: /PLA[- ]?Marble/i, type: "PLA", id: "PLA_MARBLE", label: "PLA Marble" },
+  { re: /PLA[- ]?Metal/i, type: "PLA", id: "PLA_METAL", label: "PLA Metal" },
+  { re: /PLA[- ]?Galaxy/i, type: "PLA", id: "PLA_GALAXY", label: "PLA Galaxy" },
+  { re: /PLA[- ]?Glow/i, type: "PLA", id: "PLA_GLOW", label: "PLA Glow" },
+  { re: /PLA[- ]?Sparkle/i, type: "PLA", id: "PLA_SPARKLE", label: "PLA Sparkle" },
+  { re: /PLA/i, type: "PLA", id: "PLA", label: "PLA" },
+  { re: /ABS[- ]?GF/i, type: "ABS", id: "ABS_GF", label: "ABS-GF" },
+  { re: /ABS/i, type: "ABS", id: "ABS", label: "ABS" },
+  { re: /ASA[- ]?CF/i, type: "ASA", id: "ASA_CF", label: "ASA-CF" },
+  { re: /ASA/i, type: "ASA", id: "ASA", label: "ASA" },
+  { re: /TPU/i, type: "TPU", id: "TPU", label: "TPU" },
+  { re: /PA[- ]?CF/i, type: "PA-CF", id: "PA_CF", label: "PA-CF" },
+  { re: /PA[- ]?HT/i, type: "PA", id: "PA_HT", label: "PA-HT" },
+  { re: /PA/i, type: "PA", id: "PA", label: "PA (Nylon)" },
+  { re: /PC/i, type: "PC", id: "PC", label: "PC" },
+  { re: /PPS/i, type: "PPS", id: "PPS", label: "PPS" },
+  { re: /PPA/i, type: "PPA", id: "PPA", label: "PPA" },
+  { re: /PEEK/i, type: "PEEK", id: "PEEK", label: "PEEK" },
+];
+
+const TYPE_DEFAULTS: Record<string, {
+  nozzle: number; nozzleInitial?: number; bed: number;
+  volSpeed: number; flow: number; fanMin: number; fanMax: number;
+  retraction: number; open?: boolean;
+}> = {
+  PLA:      { nozzle: 220, bed: 55, volSpeed: 15, flow: 0.98, fanMin: 60, fanMax: 100, retraction: 0.8 },
+  "PLA-CF": { nozzle: 230, bed: 55, volSpeed: 10, flow: 0.98, fanMin: 40, fanMax: 80,  retraction: 0.8 },
+  // PETG anti-teia: 245°C subsequente, 250°C 1ª camada
+  PETG:     { nozzle: 245, nozzleInitial: 250, bed: 70, volSpeed: 8, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0 },
+  "PETG-CF":{ nozzle: 260, bed: 70, volSpeed: 10, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0 },
+  ABS:      { nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0,  fanMax: 30, retraction: 0.8, open: true },
+  ASA:      { nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0,  fanMax: 30, retraction: 0.8, open: true },
+  TPU:      { nozzle: 230, bed: 40, volSpeed: 3.5, flow: 0.95, fanMin: 40, fanMax: 80, retraction: 0.4 },
+  PA:       { nozzle: 280, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
+  "PA-CF":  { nozzle: 290, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
+  PC:       { nozzle: 280, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
+  PPS:      { nozzle: 320, bed: 110, volSpeed: 8,  flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
+  PPA:      { nozzle: 300, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
+  PEEK:     { nozzle: 380, bed: 130, volSpeed: 6,  flow: 0.95, fanMin: 0, fanMax: 10, retraction: 1.0, open: true },
+};
+
+function detectType(name: string): { type: string; idBase: string; labelBase: string } {
+  for (const p of TYPE_PATTERNS) if (p.re.test(name)) return { type: p.type, idBase: p.id, labelBase: p.label };
+  return { type: "PLA", idBase: "PLA", labelBase: "PLA" };
+}
+
+function cleanLabel(name: string, suffix: string): string {
+  return name
+    .replace(new RegExp(`\\s*${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+    .replace(/^Bambu\s+/i, "")
+    .trim();
+}
+
+/** Build a MaterialBase from a filament leaf name (e.g. "Bambu PETG HF @BBL A1"). */
+export function buildMaterialFromName(name: string, suffix: string): MaterialBase {
+  const detected = detectType(name);
+  const defaults = TYPE_DEFAULTS[detected.type] ?? TYPE_DEFAULTS.PLA;
+  const highFlow = /\bHF\b|High\s*Speed|High\s*Flow/i.test(name);
+  return {
+    id: name, // use full leaf name — guaranteed unique per printer suffix
+    label: cleanLabel(name, suffix),
+    filamentId: "GFA00",
+    inheritsBaseName: name,
+    nozzle: defaults.nozzle,
+    nozzleInitial: defaults.nozzleInitial,
+    bed: defaults.bed,
+    volSpeed: defaults.volSpeed,
+    flow: defaults.flow,
+    fanMin: defaults.fanMin,
+    fanMax: defaults.fanMax,
+    retraction: defaults.retraction,
+    filamentType: detected.type,
+    open: defaults.open,
+    highFlow,
+  };
+}
+
+function isBaseTemplate(name: string): boolean {
+  return /@base\b/i.test(name) || /template/i.test(name) || /^fdm_/i.test(name);
+}
+
+/** Sort helper: keep the Basic/PLA/PETG family first, then technical, then exotic. */
+function materialSortKey(m: MaterialBase): string {
+  const family =
+    /PLA/i.test(m.label) ? "1"
+    : /PETG/i.test(m.label) ? "2"
+    : /ABS|ASA/i.test(m.label) ? "3"
+    : /TPU/i.test(m.label) ? "4"
+    : /PA|Nylon/i.test(m.label) ? "5"
+    : "9";
+  return family + m.label.toLowerCase();
+}
+
+/** Dynamic material list for a given printer, from the master filament index. */
+export function listMaterialsForPrinter(printer: Printer): MaterialBase[] {
+  const index = getMasterIndexSync();
+  if (!index) return [];
+  const suffix = resolveEffectiveSuffix(printer, index.filament_list);
+  const out = new Map<string, MaterialBase>();
+  for (const f of index.filament_list) {
+    if (!f?.name) continue;
+    if (isBaseTemplate(f.name)) continue;
+    if (!f.name.endsWith(` ${suffix}`)) continue;
+    const mat = buildMaterialFromName(f.name, suffix);
+    // Prefer non-HF over HF when same label (rare collision).
+    const existing = out.get(mat.label);
+    if (!existing || (existing.highFlow && !mat.highFlow)) out.set(mat.label, mat);
+  }
+  return Array.from(out.values()).sort((a, b) => materialSortKey(a).localeCompare(materialSortKey(b)));
+}
+
+/**
+ * Find the actual suffix used by presets for this printer. If the printer's
+ * own suffix has zero filament matches, try the compat fallback (e.g. P1S→X1C).
+ */
+function resolveEffectiveSuffix(printer: Printer, filamentList: MasterEntry[]): string {
+  const has = (suf: string) => filamentList.some((f) => f.name.endsWith(` ${suf}`));
+  if (has(printer.suffix)) return printer.suffix;
+  const fb = SUFFIX_COMPAT[printer.suffix];
+  if (fb && has(fb)) return fb;
+  return printer.suffix;
+}
+
+// -------- Process matching --------
 
 function escSuffix(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Find a real process preset that Bambu Studio will actually recognize. */
-export function findProcessInherits(printer: Printer, layerMm: number, _filamentBases: string[]): string {
-  void _filamentBases;
-  const processes = loadProcessBases();
+/** Real process preset name; throws only when nothing at all matches. */
+export function findProcessInherits(printer: Printer, layerMm: number, _bases: string[] = []): string {
+  void _bases;
+  const index = getMasterIndexSync();
+  const processes = index?.process_list.map((p) => p.name) ?? [];
   const layer = layerMm.toFixed(2);
 
   const tryFor = (suffix: string): string | null => {
     const esc = escSuffix(suffix);
-    // 1) exact layer + suffix (any tier: Standard/Optimal/Fine/Draft)
     const byLayer = new RegExp(`^${layer}mm .+ ${esc}$`);
     for (const p of processes) if (byLayer.test(p)) return p;
-    // 2) 0.20mm Standard fallback for this suffix
     const standard = `0.20mm Standard ${suffix}`;
     if (processes.includes(standard)) return standard;
-    // 3) any base ending in this suffix — pick the numerically closest layer
     const candidates = processes.filter((p) => p.endsWith(` ${suffix}`));
     if (candidates.length > 0) {
       let best = candidates[0];
@@ -246,46 +343,65 @@ export function findProcessInherits(printer: Printer, layerMm: number, _filament
     return null;
   };
 
-  const direct = tryFor(printer.suffix);
+  const filamentList = index?.filament_list ?? [];
+  const effective = resolveEffectiveSuffix(printer, filamentList);
+  const direct = tryFor(effective);
   if (direct) return direct;
-
-  const fallbackSuffix = PROCESS_COMPAT[printer.suffix];
-  if (fallbackSuffix) {
-    const via = tryFor(fallbackSuffix);
+  const fb = SUFFIX_COMPAT[effective];
+  if (fb) {
+    const via = tryFor(fb);
     if (via) return via;
   }
   throw new Error(
-    `Não encontrei o preset de processo base para ${printer.displayName}. Clique em "Atualizar com GitHub".`,
+    `Preset de processo ainda não sincronizado para ${printer.displayName}. Recarregue em alguns segundos.`,
   );
 }
 
+/** Real filament preset name. When material.id is a full leaf name, use it directly. */
 export function findFilamentInherits(printer: Printer, material: MaterialBase): string {
-  const bases = loadFilamentBases();
+  const index = getMasterIndexSync();
+  const bases = index?.filament_list.map((f) => f.name) ?? [];
+  // If material.id/inheritsBaseName is already a real leaf name, honor it.
+  if (bases.includes(material.inheritsBaseName)) return material.inheritsBaseName;
+  if (bases.includes(material.id)) return material.id;
 
-  const tryFor = (suffix: string): string | null => {
+  // Fallback: match by base name + suffix (legacy history entries).
+  const effective = resolveEffectiveSuffix(printer, index?.filament_list ?? []);
+  const suffixes = [effective, SUFFIX_COMPAT[effective]].filter(Boolean) as string[];
+  for (const suffix of suffixes) {
     const exact = `${material.inheritsBaseName} ${suffix}`;
     if (bases.includes(exact)) return exact;
-    const partial = bases.find((b) => b.startsWith(material.inheritsBaseName) && b.endsWith(` ${suffix}`));
-    return partial ?? null;
-  };
-
-  const direct = tryFor(printer.suffix);
-  if (direct) return direct;
-
-  const fallbackSuffix = FILAMENT_COMPAT[printer.suffix];
-  if (fallbackSuffix) {
-    const via = tryFor(fallbackSuffix);
-    if (via) return via;
+    const partial = bases.find(
+      (b) => b.startsWith(material.inheritsBaseName) && b.endsWith(` ${suffix}`),
+    );
+    if (partial) return partial;
+    // Also try relabelled family (e.g. "Bambu PLA Basic" via detected type).
+    const labelMatch = bases.find((b) => b.endsWith(` ${suffix}`) && detectType(b).type === material.filamentType);
+    if (labelMatch) return labelMatch;
   }
   throw new Error(
-    `Não encontrei o preset de filamento "${material.inheritsBaseName}" para ${printer.displayName}. Clique em "Atualizar com GitHub".`,
+    `Preset de filamento "${material.label}" ainda não sincronizado para ${printer.displayName}.`,
   );
 }
 
-/** Used by validation to confirm a resolved inherits is real. */
+// -------- Compat validators (used by threemf) --------
+
 export function isKnownProcess(name: string): boolean {
-  return loadProcessBases().includes(name);
+  const idx = getMasterIndexSync();
+  return !!idx?.process_list.some((p) => p.name === name);
 }
 export function isKnownFilament(name: string): boolean {
-  return loadFilamentBases().includes(name);
+  const idx = getMasterIndexSync();
+  return !!idx?.filament_list.some((f) => f.name === name);
+}
+
+// -------- Silent sync API --------
+
+/** Fire-and-forget silent refresh. NEVER throws. */
+export async function silentSync(): Promise<void> {
+  try {
+    await syncMasterIndex();
+  } catch {
+    /* swallow */
+  }
 }

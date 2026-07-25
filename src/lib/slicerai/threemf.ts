@@ -230,21 +230,31 @@ async function assembleCfg(
   for (const [k, v] of Object.entries(processOverrides)) cfg[k] = v;
 
   // ----- Filament overrides (arrays of 1 string) -----
+  // Read the resolved type from the base preset so HF/High-Speed and future
+  // materials use whatever the Bambu profile declares, not our heuristic.
+  const resolvedTypeRaw = filamentCfg.filament_type;
+  const resolvedType = Array.isArray(resolvedTypeRaw) && typeof resolvedTypeRaw[0] === "string"
+    ? (resolvedTypeRaw[0] as string)
+    : material.filamentType;
+
   const filamentOverrides: Record<string, string[]> = {
-    filament_type: [material.filamentType],
+    filament_type: [resolvedType],
     filament_diameter: ["1.75"],
     filament_is_support: ["0"],
     nozzle_temperature: [String(material.nozzle)],
     nozzle_temperature_initial_layer: [String(material.nozzleInitial ?? material.nozzle)],
     hot_plate_temp: [String(material.bed)],
     hot_plate_temp_initial_layer: [String(material.bed)],
-    filament_max_volumetric_speed: [String(material.volSpeed)],
     filament_flow_ratio: [String(material.flow)],
     fan_min_speed: [String(material.fanMin)],
     fan_max_speed: [String(material.fanMax)],
     close_fan_the_first_x_layers: ["1"],
     filament_retraction_length: [String(material.retraction)],
   };
+  // HF/High-Speed materials: keep the preset's own (high) volumetric speed.
+  if (!material.highFlow) {
+    filamentOverrides.filament_max_volumetric_speed = [String(material.volSpeed)];
+  }
   for (const [k, v] of Object.entries(filamentOverrides)) cfg[k] = v;
 
   // ----- Project lineage (last write wins) -----
@@ -271,7 +281,7 @@ async function assembleCfg(
 function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[] {
   const errors: string[] = [];
   const nKeys = Object.keys(cfg).length;
-  if (nKeys <= 100) errors.push(`project_settings.config incompleto: ${nKeys} chaves (mínimo 100). Clique em "Aprender com o GitHub" e tente novamente.`);
+  if (nKeys <= 100) errors.push(`project_settings.config incompleto: ${nKeys} chaves (mínimo 100). Aguarde a sincronização automática e tente novamente.`);
   if (cfg.from !== "project") errors.push('cfg.from deve ser "project".');
   for (const bad of ["type", "inherits", "setting_id", "instantiation"]) {
     if (bad in cfg) errors.push(`cfg contém chave proibida: ${bad}`);
@@ -526,7 +536,7 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
     warnings.push("Nenhum override detectado — o .3mf usará somente os defaults do preset base.");
   }
 
-  const needsSync = cfgErrors.some((e) => /incompleto|Aprender com o GitHub/.test(e));
+  const needsSync = cfgErrors.some((e) => /incompleto|sincroniz/i.test(e));
   const errors = [...cfgErrors, ...modelErrors, ...modelSettingsErrors, ...sliceInfoErrors, ...plateErrors];
 
   return {
