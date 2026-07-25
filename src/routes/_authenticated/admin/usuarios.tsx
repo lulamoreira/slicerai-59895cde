@@ -53,9 +53,9 @@ function UsersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [toDelete, setToDelete] = useState<Row | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<Row[]>({
     queryKey: ["admin-users"],
-    queryFn: () => fetchUsers(),
+    queryFn: () => fetchUsers() as unknown as Promise<Row[]>,
   });
 
   const filtered = useMemo(() => {
