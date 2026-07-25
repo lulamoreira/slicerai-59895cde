@@ -320,13 +320,9 @@ export function Wizard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onSync} disabled={syncing}>
-              <Github className="w-4 h-4 mr-2" />
-              {syncing ? "Sincronizando..." : "Aprender com o GitHub"}
-            </Button>
             {syncedAt && (
               <span className="text-xs text-muted-foreground hidden sm:inline">
-                Atualizado {new Date(syncedAt).toLocaleString("pt-BR")}
+                {syncing ? "Sincronizando…" : `Atualizado ${new Date(syncedAt).toLocaleString("pt-BR")}`}
               </span>
             )}
           </div>
@@ -398,7 +394,7 @@ export function Wizard() {
                 validation={validation}
                 validating={validating}
                 onRevalidate={runValidation}
-                onSync={onSync}
+                onSync={runSilentSync}
                 syncing={syncing}
               />
             )}
