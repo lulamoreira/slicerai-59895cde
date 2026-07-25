@@ -23,10 +23,10 @@ export interface Printer {
 }
 
 export interface MaterialBase {
-  id: string; // "PLA", "PETG"...
+  id: string; // for dynamic materials, this is the full filament leaf name
   label: string;
-  filamentId: string; // GFA00 etc
-  inheritsBaseName: string; // "Bambu <X> @BBL <suffix>" prefix (before suffix)
+  filamentId: string; // GFA00 etc (legacy — no longer used by generator)
+  inheritsBaseName: string; // full preset name or base ("Bambu PETG HF @BBL A1")
   nozzle: number; // nozzle temp (subsequent layers)
   nozzleInitial?: number; // nozzle temp on 1st layer (defaults to nozzle if omitted)
   bed: number;
@@ -37,6 +37,7 @@ export interface MaterialBase {
   retraction: number;
   filamentType: string; // "PLA", "PETG", "ABS", "ASA", "TPU", "PA", "PLA-CF", "PETG-CF"
   open?: boolean; // needs enclosure warning if opened
+  highFlow?: boolean; // "HF"/"High Speed" — keep preset's own volumetric speed
 }
 
 
