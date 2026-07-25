@@ -23,7 +23,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Preview3D, LegendChip } from "./Preview3D";
 import { parseSTL } from "@/lib/slicerai/stl";
 import {
-  loadPrinters, MATERIALS, OPEN_PRINTERS, syncGithub, getUpdatedAt,
+  loadPrinters, OPEN_PRINTERS, getUpdatedAt, silentSync,
+  listMaterialsForPrinter, buildMaterialFromName,
 } from "@/lib/slicerai/catalog";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
 import { generate3mfAsync, previewValidation, type ValidationReport } from "@/lib/slicerai/threemf";
@@ -128,19 +129,37 @@ export function Wizard() {
     }
   }, [patch]);
 
-  const onSync = useCallback(async () => {
+  // Silent sync — never blocks the UI, never surfaces errors.
+  const runSilentSync = useCallback(async () => {
     setSyncing(true);
     try {
-      const r = await syncGithub();
+      await silentSync();
       setPrinters(loadPrinters());
       setSyncedAt(getUpdatedAt());
-      toast.success(`GitHub sincronizado: ${r.printers} impressoras, ${r.filaments} filamentos, ${r.processes} processos.`);
-    } catch (e) {
-      toast.error((e as Error).message);
     } finally {
       setSyncing(false);
     }
   }, []);
+
+  // Auto-sync on mount (fire-and-forget). silentSync() short-circuits if the
+  // local cache is fresh (<6h), so this is cheap on repeat visits.
+  useEffect(() => {
+    void runSilentSync();
+  }, [runSilentSync]);
+
+  // Dynamic materials list, derived from the master index for the selected printer.
+  const materialsForPrinter = useMemo<MaterialBase[]>(() => {
+    if (!state.printer) return [];
+    return listMaterialsForPrinter(state.printer);
+  }, [state.printer, syncedAt]);
+
+  // If the selected material doesn't fit the new printer, clear it.
+  useEffect(() => {
+    if (!state.material || !state.printer) return;
+    if (materialsForPrinter.length === 0) return;
+    const stillValid = materialsForPrinter.some((m) => m.id === state.material!.id);
+    if (!stillValid) patch({ material: null });
+  }, [materialsForPrinter, state.material, state.printer, patch]);
 
   const runAnalysis = useCallback(async () => {
     if (!state.mesh || !state.printer) return;
