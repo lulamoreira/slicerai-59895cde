@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
-  Copy, RefreshCw, Github, History as HistoryIcon, Hexagon, AlertTriangle,
+  Copy, RefreshCw, History as HistoryIcon, Hexagon, AlertTriangle,
   CheckCircle2, XCircle, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1202,8 +1202,8 @@ function ValidationSummary({
             {report.needsSync && (
               <div className="mt-3">
                 <Button size="sm" onClick={onSync} disabled={syncing}>
-                  <Github className="w-4 h-4 mr-2" />
-                  {syncing ? "Sincronizando..." : "Aprender com o GitHub e revalidar"}
+                  <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Sincronizando…" : "Sincronizar e revalidar"}
                 </Button>
               </div>
             )}
