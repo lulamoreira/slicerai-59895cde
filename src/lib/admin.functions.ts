@@ -1,12 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
 
-type AdminCtx = { supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }; userId: string };
+type AdminCtx = { supabase: SupabaseClient<Database>; userId: string };
 async function assertAdmin(context: AdminCtx) {
   const { data, error } = await context.supabase.rpc("is_admin_or_owner", { _user_id: context.userId });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Forbidden: acesso apenas para administradores.");
 }
+
 
 // -------- Users --------
 
@@ -106,7 +109,7 @@ export const setSubscriptionStatus = createServerFn({ method: "POST" })
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: sub } = await supabaseAdmin.from("subscriptions").select("*").eq("user_id", data.userId).maybeSingle();
-    const patch: Record<string, unknown> = {
+    const patch: { user_id: string; status: "active" | "canceled"; plan_id: string | null; current_period_ends_at?: string } = {
       user_id: data.userId,
       status: data.status,
       plan_id: sub?.plan_id ?? null,
