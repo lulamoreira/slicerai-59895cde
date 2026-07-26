@@ -112,7 +112,21 @@ function PlanosPage() {
                   <li key={f} className="flex gap-2"><Check className="h-4 w-4 text-primary shrink-0 mt-0.5" /> {f}</li>
                 ))}
               </ul>
-              <Button className="w-full rounded-full h-11 mt-6" onClick={assinar}>Assinar</Button>
+              <div className="mt-4">
+                <Input
+                  placeholder="Cupom (opcional)"
+                  value={couponByPlan[p.id] ?? ""}
+                  onChange={(e) => setCouponByPlan({ ...couponByPlan, [p.id]: e.target.value })}
+                  className="rounded-full"
+                />
+              </div>
+              <Button
+                className="w-full rounded-full h-11 mt-3"
+                onClick={() => assinar(p.id)}
+                disabled={mCheckout.isPending}
+              >
+                {mCheckout.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Assinar"}
+              </Button>
             </div>
           ))}
         </div>
