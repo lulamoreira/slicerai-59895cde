@@ -69,28 +69,13 @@ async function handleEvent(event: Stripe.Event, sb: SB, stripe: Stripe) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      const userId = (session.metadata?.user_id as string | undefined) ?? null;
-      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
       const subscriptionId =
         typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
-      if (userId && customerId) {
-        await sb
-          .from("subscriptions")
-          .upsert(
-            {
-              user_id: userId,
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              status: "incomplete",
-              plan_id: (session.metadata?.plan_id as string | undefined) ?? null,
-            },
-            { onConflict: "user_id" },
-          );
-      }
-      // Fetch full subscription to sync details (customer.subscription.created will also fire).
+      // Always re-fetch the subscription so the status reflects Stripe's current truth,
+      // regardless of webhook delivery order. Do NOT pre-write "incomplete".
       if (subscriptionId) {
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        await syncSubscription(sb, sub);
+        const fresh = await stripe.subscriptions.retrieve(subscriptionId);
+        await syncSubscription(sb, fresh);
       }
       // Increment coupon usage if used
       const couponCode = (session.metadata?.coupon_code as string | undefined)?.trim().toUpperCase();
@@ -106,7 +91,9 @@ async function handleEvent(event: Stripe.Event, sb: SB, stripe: Stripe) {
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
-      await syncSubscription(sb, sub);
+      // Re-fetch so out-of-order deliveries never overwrite a newer status.
+      const fresh = await stripe.subscriptions.retrieve(sub.id);
+      await syncSubscription(sb, fresh);
       return;
     }
 
