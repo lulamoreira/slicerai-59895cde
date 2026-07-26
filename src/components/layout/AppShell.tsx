@@ -18,14 +18,14 @@ function displayName(user: User | null) {
 
 function statusInfo(access: AccessInfo | undefined): { label: string; tone: string } {
   if (!access) return { label: "Carregando…", tone: "bg-muted text-muted-foreground" };
-  if (access.is_owner) return { label: "Owner", tone: "bg-primary text-primary-foreground" };
+  // Admin/Owner supera tudo — acesso ilimitado
   if (access.is_admin) return { label: "Admin", tone: "bg-primary text-primary-foreground" };
-  const plan = access.plan_name ? ` · ${access.plan_name}` : "";
+  const plan = access.plan_name?.trim();
   switch (access.status) {
     case "trialing":
-      return { label: `Trial${plan}`, tone: "bg-primary/15 text-primary" };
+      return { label: plan ? `${plan} · Teste` : "Teste grátis", tone: "bg-primary/15 text-primary" };
     case "active":
-      return { label: `Ativo${plan}`, tone: "bg-primary/15 text-primary" };
+      return { label: plan ?? "Ativo", tone: "bg-primary/15 text-primary" };
     case "past_due":
       return { label: "Pagamento pendente", tone: "bg-destructive/15 text-destructive" };
     case "canceled":
