@@ -127,7 +127,9 @@ async function handleEvent(event: Stripe.Event, sb: SB, stripe: Stripe) {
     }
 
     case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
+      const invoice = event.data.object as Stripe.Invoice & {
+        subscription?: string | { id: string } | null;
+      };
       const subId =
         typeof invoice.subscription === "string"
           ? invoice.subscription
@@ -175,6 +177,9 @@ async function syncSubscription(sb: SB, sub: Stripe.Subscription) {
 
   const status = mapStripeStatus(sub.status);
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+  const subAny = sub as Stripe.Subscription & { current_period_end?: number | null };
+  const periodEnd =
+    subAny.current_period_end ?? sub.items.data[0]?.current_period_end ?? null;
 
   await sb.from("subscriptions").upsert(
     {
@@ -184,9 +189,7 @@ async function syncSubscription(sb: SB, sub: Stripe.Subscription) {
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
       cancel_at_period_end: sub.cancel_at_period_end ?? false,
-      current_period_ends_at: sub.current_period_end
-        ? new Date(sub.current_period_end * 1000).toISOString()
-        : null,
+      current_period_ends_at: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
       trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
     },
     { onConflict: "user_id" },

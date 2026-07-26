@@ -9,8 +9,8 @@ export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY não configurada no servidor.");
   _stripe = new Stripe(key, {
-    apiVersion: "2024-06-20",
-    // Required on Cloudflare Workers — the default Node HTTP client is not available.
+    // Pin to a known API version. Cast to satisfy the SDK's literal type.
+    apiVersion: "2024-06-20" as unknown as Stripe.LatestApiVersion,
     httpClient: Stripe.createFetchHttpClient(),
   });
   return _stripe;
