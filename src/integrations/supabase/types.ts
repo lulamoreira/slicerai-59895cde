@@ -170,6 +170,24 @@ export type Database = {
         }
         Relationships: []
       }
+      stripe_events: {
+        Row: {
+          id: string
+          received_at: string
+          type: string
+        }
+        Insert: {
+          id: string
+          received_at?: string
+          type: string
+        }
+        Update: {
+          id?: string
+          received_at?: string
+          type?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           cancel_at_period_end: boolean
@@ -265,6 +283,8 @@ export type Database = {
         | "canceled"
         | "expired"
         | "none"
+        | "incomplete"
+        | "unpaid"
       theme_pref: "light" | "dark" | "system"
     }
     CompositeTypes: {
@@ -401,6 +421,8 @@ export const Constants = {
         "canceled",
         "expired",
         "none",
+        "incomplete",
+        "unpaid",
       ],
       theme_pref: ["light", "dark", "system"],
     },

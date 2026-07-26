@@ -153,6 +153,8 @@ export const upsertPlan = createServerFn({ method: "POST" })
     trial_days: number;
     active: boolean;
     sort_order: number;
+    stripe_price_month_id?: string | null;
+    stripe_price_year_id?: string | null;
   }) => data)
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
@@ -167,6 +169,8 @@ export const upsertPlan = createServerFn({ method: "POST" })
       trial_days: data.trial_days,
       active: data.active,
       sort_order: data.sort_order,
+      stripe_price_month_id: data.stripe_price_month_id?.trim() || null,
+      stripe_price_year_id: data.stripe_price_year_id?.trim() || null,
     };
     if (data.id) {
       const { error } = await supabaseAdmin.from("plans").update(row).eq("id", data.id);
@@ -205,13 +209,56 @@ export const upsertCoupon = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const code = data.code.toUpperCase();
+
+    // Sync to Stripe (best-effort — if key not configured, still persist locally).
+    let stripe_coupon_id: string | null = null;
+    try {
+      const { getStripe } = await import("./stripe.server");
+      const stripe = getStripe();
+      // Load existing to reuse coupon id when possible.
+      let existing: { stripe_coupon_id: string | null } | null = null;
+      if (data.id) {
+        const { data: cur } = await supabaseAdmin
+          .from("coupons")
+          .select("stripe_coupon_id")
+          .eq("id", data.id)
+          .maybeSingle();
+        existing = cur;
+      }
+      // Archive previous stripe coupon if any (Stripe coupons are largely immutable).
+      if (existing?.stripe_coupon_id) {
+        try {
+          await stripe.coupons.del(existing.stripe_coupon_id);
+        } catch (e) {
+          console.warn("[coupon] failed to delete previous stripe coupon", e);
+        }
+      }
+      if (data.active) {
+        const created = await stripe.coupons.create({
+          duration: "once",
+          ...(data.kind === "percent"
+            ? { percent_off: data.value }
+            : { amount_off: data.value, currency: "brl" }),
+          name: code,
+          max_redemptions: data.max_redemptions ?? undefined,
+          redeem_by: data.valid_until ? Math.floor(new Date(data.valid_until).getTime() / 1000) : undefined,
+          metadata: { code },
+        });
+        stripe_coupon_id = created.id;
+      }
+    } catch (e) {
+      console.warn("[coupon] stripe sync skipped/failed", (e as Error).message);
+    }
+
     const row = {
-      code: data.code.toUpperCase(),
+      code,
       kind: data.kind,
       value: data.value,
       max_redemptions: data.max_redemptions ?? null,
       valid_until: data.valid_until ?? null,
       active: data.active,
+      stripe_coupon_id,
     };
     if (data.id) {
       const { error } = await supabaseAdmin.from("coupons").update(row).eq("id", data.id);
@@ -229,6 +276,19 @@ export const deleteCoupon = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: cur } = await supabaseAdmin
+      .from("coupons")
+      .select("stripe_coupon_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (cur?.stripe_coupon_id) {
+      try {
+        const { getStripe } = await import("./stripe.server");
+        await getStripe().coupons.del(cur.stripe_coupon_id);
+      } catch (e) {
+        console.warn("[coupon] delete stripe coupon failed", (e as Error).message);
+      }
+    }
     const { error } = await supabaseAdmin.from("coupons").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };

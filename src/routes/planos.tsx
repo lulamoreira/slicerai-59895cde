@@ -1,11 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Check } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, useAccess } from "@/lib/useSession";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import { createCheckoutSession } from "@/lib/payments.functions";
 
 export const Route = createFileRoute("/planos")({
   head: () => ({
@@ -24,16 +28,31 @@ function formatBRL(cents: number) {
 }
 
 function PlanosPage() {
+  const nav = useNavigate();
   const { user } = useSession();
   const { data: access } = useAccess(user);
+  const [couponByPlan, setCouponByPlan] = useState<Record<string, string>>({});
+  const checkoutFn = useServerFn(createCheckoutSession);
 
   const { data: plans } = useQuery({
     queryKey: ["plans"],
     queryFn: async () => (await supabase.from("plans").select("*").eq("active", true).order("sort_order")).data ?? [],
   });
 
-  function assinar() {
-    toast.info("Cobrança em breve", { description: "A integração com Stripe é ativada na Fase 3." });
+  const mCheckout = useMutation({
+    mutationFn: async (v: { plan_id: string; coupon_code?: string | null }) => {
+      const res = await checkoutFn({
+        data: { plan_id: v.plan_id, coupon_code: v.coupon_code ?? null, origin: window.location.origin },
+      });
+      return res as { url: string };
+    },
+    onSuccess: ({ url }) => { window.location.href = url; },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function assinar(planId: string) {
+    if (!user) { nav({ to: "/auth" }); return; }
+    mCheckout.mutate({ plan_id: planId, coupon_code: couponByPlan[planId]?.trim() || null });
   }
 
   return (
@@ -93,7 +112,21 @@ function PlanosPage() {
                   <li key={f} className="flex gap-2"><Check className="h-4 w-4 text-primary shrink-0 mt-0.5" /> {f}</li>
                 ))}
               </ul>
-              <Button className="w-full rounded-full h-11 mt-6" onClick={assinar}>Assinar</Button>
+              <div className="mt-4">
+                <Input
+                  placeholder="Cupom (opcional)"
+                  value={couponByPlan[p.id] ?? ""}
+                  onChange={(e) => setCouponByPlan({ ...couponByPlan, [p.id]: e.target.value })}
+                  className="rounded-full"
+                />
+              </div>
+              <Button
+                className="w-full rounded-full h-11 mt-3"
+                onClick={() => assinar(p.id)}
+                disabled={mCheckout.isPending}
+              >
+                {mCheckout.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Assinar"}
+              </Button>
             </div>
           ))}
         </div>

@@ -1,13 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { LogOut } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, useAccess } from "@/lib/useSession";
 import { PageContainer } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { createBillingPortalSession } from "@/lib/payments.functions";
 
 export const Route = createFileRoute("/_authenticated/conta")({
   head: () => ({
@@ -30,6 +34,13 @@ function ContaPage() {
     queryKey: ["profile", user?.id],
     enabled: !!user,
     queryFn: async () => (await supabase.from("profiles").select("*").eq("id", user!.id).maybeSingle()).data,
+  });
+
+  const portalFn = useServerFn(createBillingPortalSession);
+  const mPortal = useMutation({
+    mutationFn: async () => (await portalFn({ data: { origin: window.location.origin } })) as { url: string },
+    onSuccess: ({ url }) => { window.location.href = url; },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   async function signOut() {
@@ -67,8 +78,13 @@ function ContaPage() {
         </div>
         <div className="mt-4 flex gap-2 flex-wrap">
           <Button className="rounded-full" variant="outline" onClick={() => nav({ to: "/planos" })}>Ver planos</Button>
-          <Button className="rounded-full" variant="secondary" disabled title="Disponível após integração Stripe">
-            Gerenciar assinatura
+          <Button
+            className="rounded-full"
+            variant="secondary"
+            onClick={() => mPortal.mutate()}
+            disabled={mPortal.isPending}
+          >
+            {mPortal.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gerenciar assinatura"}
           </Button>
         </div>
       </section>
@@ -84,6 +100,7 @@ function ContaPage() {
           <LogOut className="h-4 w-4" /> Sair
         </Button>
       </section>
+      <Toaster position="top-right" richColors />
     </PageContainer>
   );
 }
