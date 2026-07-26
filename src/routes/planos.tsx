@@ -1,14 +1,25 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Check } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { Check, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, useAccess } from "@/lib/useSession";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import { createCheckoutSession } from "@/lib/payments.functions";
 
 export const Route = createFileRoute("/planos")({
   head: () => ({
+    meta: [
+      { title: "Planos — SlicerAI" },
+      { name: "description", content: "Escolha seu plano SlicerAI: trial grátis de 7 dias e assinatura Pro." },
+      { property: "og:title", content: "Planos — SlicerAI" },
+      { property: "og:description", content: "Trial grátis e planos SlicerAI Pro." },
+    ],
+  }),
     meta: [
       { title: "Planos — SlicerAI" },
       { name: "description", content: "Escolha seu plano SlicerAI: trial grátis de 7 dias e assinatura Pro." },
