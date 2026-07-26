@@ -20,13 +20,6 @@ export const Route = createFileRoute("/planos")({
       { property: "og:description", content: "Trial grátis e planos SlicerAI Pro." },
     ],
   }),
-    meta: [
-      { title: "Planos — SlicerAI" },
-      { name: "description", content: "Escolha seu plano SlicerAI: trial grátis de 7 dias e assinatura Pro." },
-      { property: "og:title", content: "Planos — SlicerAI" },
-      { property: "og:description", content: "Trial grátis e planos SlicerAI Pro." },
-    ],
-  }),
   component: PlanosPage,
 });
 
@@ -35,16 +28,31 @@ function formatBRL(cents: number) {
 }
 
 function PlanosPage() {
+  const nav = useNavigate();
   const { user } = useSession();
   const { data: access } = useAccess(user);
+  const [couponByPlan, setCouponByPlan] = useState<Record<string, string>>({});
+  const checkoutFn = useServerFn(createCheckoutSession);
 
   const { data: plans } = useQuery({
     queryKey: ["plans"],
     queryFn: async () => (await supabase.from("plans").select("*").eq("active", true).order("sort_order")).data ?? [],
   });
 
-  function assinar() {
-    toast.info("Cobrança em breve", { description: "A integração com Stripe é ativada na Fase 3." });
+  const mCheckout = useMutation({
+    mutationFn: async (v: { plan_id: string; coupon_code?: string | null }) => {
+      const res = await checkoutFn({
+        data: { plan_id: v.plan_id, coupon_code: v.coupon_code ?? null, origin: window.location.origin },
+      });
+      return res as { url: string };
+    },
+    onSuccess: ({ url }) => { window.location.href = url; },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function assinar(planId: string) {
+    if (!user) { nav({ to: "/auth" }); return; }
+    mCheckout.mutate({ plan_id: planId, coupon_code: couponByPlan[planId]?.trim() || null });
   }
 
   return (
