@@ -30,6 +30,8 @@ type Plan = {
   trial_days: number;
   active: boolean;
   sort_order: number;
+  stripe_price_month_id: string | null;
+  stripe_price_year_id: string | null;
 };
 
 function formatBRL(cents: number) {
@@ -145,16 +147,16 @@ function PlanDialog({
     trial_days: (initial?.trial_days ?? 7).toString(),
     active: initial?.active ?? true,
     sort_order: (initial?.sort_order ?? 0).toString(),
+    stripe_price_month_id: initial?.stripe_price_month_id ?? "",
+    stripe_price_year_id: initial?.stripe_price_year_id ?? "",
   });
 
-  // reset when initial changes
-  useState(() => {}); // noop; simple pattern: use `key` prop from caller for reset
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild><span /></DialogTrigger>
       <DialogContent key={initial?.id ?? "new"}>
         <DialogHeader><DialogTitle>{initial ? "Editar plano" : "Novo plano"}</DialogTitle></DialogHeader>
-        <div className="grid gap-3">
+        <div className="grid gap-3 max-h-[70vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Código</Label><Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="pro" /></div>
             <div><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Pro" /></div>
@@ -163,6 +165,16 @@ function PlanDialog({
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Preço mensal (R$)</Label><Input type="number" step="0.01" value={form.price_month_reais} onChange={(e) => setForm({ ...form, price_month_reais: e.target.value })} /></div>
             <div><Label>Preço anual (R$)</Label><Input type="number" step="0.01" value={form.price_year_reais} onChange={(e) => setForm({ ...form, price_year_reais: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Stripe price ID (mensal)</Label>
+              <Input value={form.stripe_price_month_id} onChange={(e) => setForm({ ...form, stripe_price_month_id: e.target.value })} placeholder="price_..." />
+            </div>
+            <div>
+              <Label>Stripe price ID (anual)</Label>
+              <Input value={form.stripe_price_year_id} onChange={(e) => setForm({ ...form, stripe_price_year_id: e.target.value })} placeholder="price_..." />
+            </div>
           </div>
           <div><Label>Features (uma por linha)</Label><Textarea rows={4} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
@@ -187,6 +199,8 @@ function PlanDialog({
                 trial_days: parseInt(form.trial_days || "0", 10),
                 active: form.active,
                 sort_order: parseInt(form.sort_order || "0", 10),
+                stripe_price_month_id: form.stripe_price_month_id.trim() || null,
+                stripe_price_year_id: form.stripe_price_year_id.trim() || null,
               })
             }
           >
