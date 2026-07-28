@@ -749,13 +749,42 @@ function StepMaterial({
             />
           </div>
         </div>
-        {state.material && (
+        {state.material && !isNylonFamily(state.material) && (
           <div className="text-xs text-muted-foreground space-y-1">
             <div>Bico {state.material.nozzle}°C · Mesa {state.material.bed}°C · Vol. máx {state.material.volSpeed} mm³/s</div>
             <div>Retração {state.material.retraction}mm · Fan {state.material.fanMin}–{state.material.fanMax}% (0 na 1ª camada)</div>
           </div>
         )}
-        {openWarning && (
+        {state.material && isNylonFamily(state.material) && (
+          <div className="text-xs text-muted-foreground">
+            Temperaturas, vazão e ventilador seguem o preset oficial da Bambu — não sobrescrevemos PA/Nylon.
+          </div>
+        )}
+        {isNylonFamily(state.material) && isOpenPrinter(state.printer) && (
+          <Alert variant="destructive">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertTitle>Nylon em impressora aberta é arriscado</AlertTitle>
+            <AlertDescription className="text-xs">
+              {state.printer?.printerModel} é frame ABERTO. Nylon empena e delamina sem câmara aquecida —
+              o recomendado é P1S, X1C ou H2D. Se for imprimir mesmo assim, use brim largo,
+              câmara improvisada e feche janelas.
+            </AlertDescription>
+          </Alert>
+        )}
+        {isNylonFamily(state.material) && (
+          <Alert>
+            <Info className="w-4 h-4" />
+            <AlertTitle className="text-sm">Nylon / PA — checklist obrigatório</AlertTitle>
+            <AlertDescription className="text-xs space-y-1">
+              <div>• <strong>Secar</strong> 8–12 h a 70–80 °C antes de imprimir. Use <strong>dry box</strong> durante toda a impressão (higroscópico).</div>
+              <div>• Placa recomendada: <strong>Engineering Plate</strong> (aplicada por padrão; editável no Avançado).</div>
+              {isAbrasive(state.material) && (
+                <div>• Material <strong>abrasivo</strong> (CF/GF): exige <strong>bico endurecido</strong> (hardened steel). Bico de latão desgasta em horas.</div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+        {openWarning && !isNylonFamily(state.material) && (
           <Alert variant="destructive">
             <AlertTriangle className="w-4 h-4" />
             <AlertTitle>Cuidado com material técnico em impressora aberta</AlertTitle>
