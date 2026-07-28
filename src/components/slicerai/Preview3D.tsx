@@ -46,7 +46,7 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
       const triCount = mesh.indices.length / 3;
       const expanded = new Float32Array(triCount * 9);
       const colors = new Float32Array(triCount * 9);
-      const cBase = new THREE.Color(color || "#F5C518");
+      const cBase = new THREE.Color("#9ca3af");
       const cRed = new THREE.Color("#ef4444");
       const cYel = new THREE.Color("#f59e0b");
       for (let i = 0; i < triCount; i++) {
