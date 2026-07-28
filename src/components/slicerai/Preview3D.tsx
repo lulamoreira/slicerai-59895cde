@@ -26,10 +26,20 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
         positions[i] = v.x; positions[i + 1] = v.y; positions[i + 2] = v.z;
       }
     }
-    // settle
-    let minZ = Infinity;
-    for (let i = 2; i < positions.length; i += 3) if (positions[i] < minZ) minZ = positions[i];
-    for (let i = 2; i < positions.length; i += 3) positions[i] -= minZ;
+    // settle to Z=0 and center on XY
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] -= cx;
+      positions[i + 1] -= cy;
+      positions[i + 2] -= minZ;
+    }
 
     // Expand per-face if we have flags to color
     if (faceFlags && faceFlags.length === mesh.indices.length / 3) {
