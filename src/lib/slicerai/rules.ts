@@ -11,7 +11,9 @@ export function isNylonFamily(mat: MaterialBase | null | undefined): boolean {
 /** Abrasive fibre-reinforced material — requires hardened steel nozzle. */
 export function isAbrasive(mat: MaterialBase | null | undefined): boolean {
   if (!mat) return false;
-  return /-CF\b|-GF\b|CarbonFiber|GlassFiber/i.test(mat.label) || /-CF\b|-GF\b/i.test(mat.filamentType);
+  return (
+    /-CF\b|-GF\b|CarbonFiber|GlassFiber/i.test(mat.label) || /-CF\b|-GF\b/i.test(mat.filamentType)
+  );
 }
 
 /** Frame-open Bambu printers where PA/Nylon is strongly discouraged. */
@@ -32,18 +34,60 @@ export interface PurposeProfile {
 export function purposeProfile(p: Purpose, mat: MaterialBase): PurposeProfile {
   switch (p) {
     case "decoracao":
-      return { layer: 0.16, walls: 3, infill: 12, pattern: "gyroid", wallGenerator: "arachne", outerSpeed: 80 };
+      return {
+        layer: 0.16,
+        walls: 3,
+        infill: 12,
+        pattern: "gyroid",
+        wallGenerator: "arachne",
+        outerSpeed: 80,
+      };
     case "mecanica":
-      return { layer: 0.20, walls: 4, infill: 35, pattern: "grid", wallGenerator: "classic", outerSpeed: 100 };
+      return {
+        layer: 0.2,
+        walls: 4,
+        infill: 35,
+        pattern: "grid",
+        wallGenerator: "classic",
+        outerSpeed: 100,
+      };
     case "miniatura":
-      return { layer: 0.10, walls: 3, infill: 10, pattern: "gyroid", wallGenerator: "arachne", outerSpeed: 50 };
+      return {
+        layer: 0.1,
+        walls: 3,
+        infill: 10,
+        pattern: "gyroid",
+        wallGenerator: "arachne",
+        outerSpeed: 50,
+      };
     case "prototipo":
-      return { layer: 0.28, walls: 2, infill: 10, pattern: "grid", wallGenerator: "classic", outerSpeed: 150 };
+      return {
+        layer: 0.28,
+        walls: 2,
+        infill: 10,
+        pattern: "grid",
+        wallGenerator: "classic",
+        outerSpeed: 150,
+      };
     case "flexivel":
-      return { layer: 0.20, walls: 3, infill: 8, pattern: "gyroid", wallGenerator: "arachne", outerSpeed: 30 };
+      return {
+        layer: 0.2,
+        walls: 3,
+        infill: 8,
+        pattern: "gyroid",
+        wallGenerator: "arachne",
+        outerSpeed: 30,
+      };
   }
   void mat;
-  return { layer: 0.20, walls: 3, infill: 15, pattern: "grid", wallGenerator: "classic", outerSpeed: 100 };
+  return {
+    layer: 0.2,
+    walls: 3,
+    infill: 15,
+    pattern: "grid",
+    wallGenerator: "classic",
+    outerSpeed: 100,
+  };
 }
 
 export interface SupportConfig {
@@ -62,23 +106,41 @@ export interface SupportConfig {
   style: string;
 }
 
-export function supportConfig(mat: MaterialBase, type: "normal" | "tree", supportOn: boolean): SupportConfig {
+export function supportConfig(
+  mat: MaterialBase,
+  type: "normal" | "tree",
+  supportOn: boolean,
+): SupportConfig {
   const topZByMat: Record<string, number> = {
-    PLA: 0.20, "PLA-CF": 0.20, PETG: 0.25, "PETG-CF": 0.25, ABS: 0.22, ASA: 0.22, TPU: 0.25, PA: 0.22,
+    PLA: 0.2,
+    "PLA-CF": 0.2,
+    PETG: 0.25,
+    "PETG-CF": 0.25,
+    ABS: 0.22,
+    ASA: 0.22,
+    TPU: 0.25,
+    PA: 0.22,
   };
   const angleByMat: Record<string, number> = {
-    PLA: 45, "PLA-CF": 45, PETG: 50, "PETG-CF": 50, ABS: 50, ASA: 50, TPU: 50, PA: 50,
+    PLA: 45,
+    "PLA-CF": 45,
+    PETG: 50,
+    "PETG-CF": 50,
+    ABS: 50,
+    ASA: 50,
+    TPU: 50,
+    PA: 50,
   };
-  const topZ = topZByMat[mat.filamentType] ?? 0.20;
+  const topZ = topZByMat[mat.filamentType] ?? 0.2;
   const angle = angleByMat[mat.filamentType] ?? 45;
 
   return {
     supportOn,
     type,
     topZ,
-    bottomZ: 0.20,
+    bottomZ: 0.2,
     thresholdAngle: angle,
-    xyDistance: 0.40,
+    xyDistance: 0.4,
     interfaceTop: 2,
     interfaceBottom: 0,
     interfaceSpacing: 0,

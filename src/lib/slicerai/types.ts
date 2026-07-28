@@ -10,7 +10,6 @@ export interface STLMesh {
   sourceBuffer?: ArrayBuffer; // original STL bytes, kept in memory for reuse (history)
 }
 
-
 export interface Printer {
   id: string; // printer_settings_id, ex: "Bambu Lab A1 0.4 nozzle"
   displayName: string;
@@ -39,7 +38,6 @@ export interface MaterialBase {
   open?: boolean; // needs enclosure warning if opened
   highFlow?: boolean; // "HF"/"High Speed" — keep preset's own volumetric speed
 }
-
 
 export type Purpose = "decoracao" | "mecanica" | "miniatura" | "prototipo" | "flexivel";
 
@@ -93,9 +91,9 @@ export interface WizardState {
   bed: string; // curr_bed_type
   ironing: {
     type?: "no ironing" | "top" | "topmost" | "solid"; // undefined = auto by purpose
-    flow: string;    // e.g. "10%"
+    flow: string; // e.g. "10%"
     spacing: string; // e.g. "0.1"
-    speed: string;   // e.g. "20"
+    speed: string; // e.g. "20"
   };
   specialOverrides: SpecialOverride[];
 }
@@ -123,4 +121,3 @@ export interface HistoryEntry {
   };
   outputFileName?: string; // final .3mf name for display
 }
-

@@ -32,24 +32,39 @@ function transformMesh(mesh: STLMesh, rotation: Vec3, centerOnBed: boolean, prin
   const positions = new Float32Array(mesh.positions);
   if (rotation[0] || rotation[1] || rotation[2]) {
     const [rx, ry, rz] = rotation;
-    const cx = Math.cos(rx), sx = Math.sin(rx);
-    const cy = Math.cos(ry), sy = Math.sin(ry);
-    const cz = Math.cos(rz), sz = Math.sin(rz);
+    const cx = Math.cos(rx),
+      sx = Math.sin(rx);
+    const cy = Math.cos(ry),
+      sy = Math.sin(ry);
+    const cz = Math.cos(rz),
+      sz = Math.sin(rz);
     for (let i = 0; i < positions.length; i += 3) {
-      let x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      let x = positions[i],
+        y = positions[i + 1],
+        z = positions[i + 2];
       let y1 = y * cx - z * sx;
       let z1 = y * sx + z * cx;
-      y = y1; z = z1;
+      y = y1;
+      z = z1;
       let x1 = x * cy + z * sy;
       z1 = -x * sy + z * cy;
-      x = x1; z = z1;
+      x = x1;
+      z = z1;
       x1 = x * cz - y * sz;
       y1 = x * sz + y * cz;
-      x = x1; y = y1;
-      positions[i] = x; positions[i + 1] = y; positions[i + 2] = z;
+      x = x1;
+      y = y1;
+      positions[i] = x;
+      positions[i + 1] = y;
+      positions[i + 2] = z;
     }
   }
-  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
   for (let i = 0; i < positions.length; i += 3) {
     if (positions[i] < minX) minX = positions[i];
     if (positions[i + 1] < minY) minY = positions[i + 1];
@@ -62,9 +77,15 @@ function transformMesh(mesh: STLMesh, rotation: Vec3, centerOnBed: boolean, prin
   const ty = centerOnBed ? printer.bed[1] / 2 - (minY + maxY) / 2 : -minY;
   const tz = -minZ;
   for (let i = 0; i < positions.length; i += 3) {
-    positions[i] += tx; positions[i + 1] += ty; positions[i + 2] += tz;
+    positions[i] += tx;
+    positions[i + 1] += ty;
+    positions[i + 2] += tz;
   }
-  return { positions, indices: mesh.indices, size: [maxX - minX, maxY - minY, maxZ - minZ] as Vec3 };
+  return {
+    positions,
+    indices: mesh.indices,
+    size: [maxX - minX, maxY - minY, maxZ - minZ] as Vec3,
+  };
 }
 
 function build3dmodelXml(mesh: { positions: Float32Array; indices: Uint32Array }): string {
@@ -118,15 +139,32 @@ const RELS = `<?xml version="1.0" encoding="UTF-8"?>
  <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
-const VALID_BEDS = new Set(["Cool Plate", "Engineering Plate", "High Temp Plate", "Textured PEI Plate", "Smooth PEI Plate"]);
+const VALID_BEDS = new Set([
+  "Cool Plate",
+  "Engineering Plate",
+  "High Temp Plate",
+  "Textured PEI Plate",
+  "Smooth PEI Plate",
+]);
 
 /** Meta keys that must NOT appear in project_settings.config. */
 const META_STRIP = new Set([
-  "type", "name", "from", "setting_id", "instantiation", "inherits",
-  "filament_id", "filament_settings_id", "print_settings_id", "printer_settings_id",
-  "compatible_printers", "compatible_printers_condition",
-  "compatible_prints", "compatible_prints_condition",
-  "version", "is_custom_defined",
+  "type",
+  "name",
+  "from",
+  "setting_id",
+  "instantiation",
+  "inherits",
+  "filament_id",
+  "filament_settings_id",
+  "print_settings_id",
+  "printer_settings_id",
+  "compatible_printers",
+  "compatible_printers_condition",
+  "compatible_prints",
+  "compatible_prints_condition",
+  "version",
+  "is_custom_defined",
 ]);
 
 function toStringy(v: unknown): unknown {
@@ -218,7 +256,11 @@ async function assembleCfg(
     ironing_spacing: state.ironing.spacing,
     ironing_speed: state.ironing.speed,
     enable_support: sup.supportOn ? "1" : "0",
-    support_type: sup.supportOn ? (sup.type === "tree" ? "tree(auto)" : "normal(auto)") : "normal(auto)",
+    support_type: sup.supportOn
+      ? sup.type === "tree"
+        ? "tree(auto)"
+        : "normal(auto)"
+      : "normal(auto)",
     support_style: sup.style,
     support_top_z_distance: String(sup.topZ),
     support_bottom_z_distance: String(sup.bottomZ),
@@ -241,9 +283,10 @@ async function assembleCfg(
   // Read the resolved type from the base preset so HF/High-Speed and future
   // materials use whatever the Bambu profile declares, not our heuristic.
   const resolvedTypeRaw = filamentCfg.filament_type;
-  const resolvedType = Array.isArray(resolvedTypeRaw) && typeof resolvedTypeRaw[0] === "string"
-    ? (resolvedTypeRaw[0] as string)
-    : material.filamentType;
+  const resolvedType =
+    Array.isArray(resolvedTypeRaw) && typeof resolvedTypeRaw[0] === "string"
+      ? (resolvedTypeRaw[0] as string)
+      : material.filamentType;
 
   const isNylon = isNylonFamily(material);
 
@@ -255,7 +298,9 @@ async function assembleCfg(
   // PA/Nylon: preserve preset temps/flow/fan/retraction — Bambu já calibrou.
   if (!isNylon) {
     filamentOverrides.nozzle_temperature = [String(material.nozzle)];
-    filamentOverrides.nozzle_temperature_initial_layer = [String(material.nozzleInitial ?? material.nozzle)];
+    filamentOverrides.nozzle_temperature_initial_layer = [
+      String(material.nozzleInitial ?? material.nozzle),
+    ];
     filamentOverrides.hot_plate_temp = [String(material.bed)];
     filamentOverrides.hot_plate_temp_initial_layer = [String(material.bed)];
     filamentOverrides.filament_flow_ratio = [String(material.flow)];
@@ -274,9 +319,10 @@ async function assembleCfg(
   const specialProcessKeys: string[] = [];
   const specialFilamentKeys: string[] = [];
   const isFilamentKey = (k: string) =>
-    /^(filament_|nozzle_temperature|hot_plate|cool_plate|textured_plate|fan_|slow_down_|chamber_temperature|close_fan_the_first)/.test(k)
-    || Array.isArray(filamentCfg[k]);
-  for (const ov of (state.specialOverrides ?? [])) {
+    /^(filament_|nozzle_temperature|hot_plate|cool_plate|textured_plate|fan_|slow_down_|chamber_temperature|close_fan_the_first)/.test(
+      k,
+    ) || Array.isArray(filamentCfg[k]);
+  for (const ov of state.specialOverrides ?? []) {
     const k = (ov.key ?? "").trim();
     const v = ov.value ?? "";
     if (!k) continue;
@@ -313,7 +359,10 @@ async function assembleCfg(
 function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[] {
   const errors: string[] = [];
   const nKeys = Object.keys(cfg).length;
-  if (nKeys <= 100) errors.push(`project_settings.config incompleto: ${nKeys} chaves (mínimo 100). Aguarde a sincronização automática e tente novamente.`);
+  if (nKeys <= 100)
+    errors.push(
+      `project_settings.config incompleto: ${nKeys} chaves (mínimo 100). Aguarde a sincronização automática e tente novamente.`,
+    );
   if (cfg.from !== "project") errors.push('cfg.from deve ser "project".');
   for (const bad of ["type", "inherits", "setting_id", "instantiation"]) {
     if (bad in cfg) errors.push(`cfg contém chave proibida: ${bad}`);
@@ -343,16 +392,26 @@ function validateCfg(cfg: Record<string, unknown>, state: WizardState): string[]
   if (!Array.isArray(dss)) {
     errors.push("different_settings_to_system ausente ou não é array.");
   } else if (dss.length !== 3) {
-    errors.push(`different_settings_to_system deve ter 3 slots [process, filament, printer]; encontrado ${dss.length}.`);
+    errors.push(
+      `different_settings_to_system deve ter 3 slots [process, filament, printer]; encontrado ${dss.length}.`,
+    );
   } else if (dss.some((s) => typeof s !== "string")) {
-    errors.push("different_settings_to_system deve conter apenas strings (ordem: process, filament, printer).");
+    errors.push(
+      "different_settings_to_system deve conter apenas strings (ordem: process, filament, printer).",
+    );
   }
   if (!VALID_BEDS.has(state.bed)) errors.push(`curr_bed_type inválido: ${state.bed}`);
-  if (!state.color || !/^#[0-9A-Fa-f]{6}$/.test(state.color)) errors.push("Cor do filamento é obrigatória (#RRGGBB).");
+  if (!state.color || !/^#[0-9A-Fa-f]{6}$/.test(state.color))
+    errors.push("Cor do filamento é obrigatória (#RRGGBB).");
   return errors;
 }
 
-function buildPlate1Json(printer: Printer, _state: WizardState, _processLeaf: string, _filamentLeaf: string): string {
+function buildPlate1Json(
+  printer: Printer,
+  _state: WizardState,
+  _processLeaf: string,
+  _filamentLeaf: string,
+): string {
   return JSON.stringify({
     filament_ids: [1],
     first_extruder: 1,
@@ -361,7 +420,6 @@ function buildPlate1Json(printer: Printer, _state: WizardState, _processLeaf: st
     version: 2,
   });
 }
-
 
 function buildModelSettingsXml(state: WizardState, printer: Printer): string {
   const safeName = xmlEscape(state.mesh?.fileName ?? "modelo.stl");
@@ -432,19 +490,20 @@ function validatePlate1(json: string, _state?: WizardState): string[] {
   return errors;
 }
 
-
 function validateModelXml(xml: string): string[] {
   const errors: string[] = [];
   if (!xml.includes(`<metadata name="Application">${BAMBUSTUDIO_APPLICATION}</metadata>`)) {
-    errors.push(`3D/3dmodel.model: Application deve ser "${BAMBUSTUDIO_APPLICATION}" para o Bambu Studio carregar configurações.`);
+    errors.push(
+      `3D/3dmodel.model: Application deve ser "${BAMBUSTUDIO_APPLICATION}" para o Bambu Studio carregar configurações.`,
+    );
   }
   if (!xml.includes(`<metadata name="BambuStudio:3mfVersion">${BBS_3MF_VERSION}</metadata>`)) {
     errors.push("3D/3dmodel.model: falta metadata BambuStudio:3mfVersion=1.");
   }
-  if (!xml.includes("xmlns:BambuStudio=\"http://schemas.bambulab.com/package/2021\"")) {
+  if (!xml.includes('xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"')) {
     errors.push("3D/3dmodel.model: namespace BambuStudio ausente.");
   }
-  if (!xml.includes("<build") || !xml.includes("<item objectid=\"1\"")) {
+  if (!xml.includes("<build") || !xml.includes('<item objectid="1"')) {
     errors.push("3D/3dmodel.model: build/item da peça ausente.");
   }
   return errors;
@@ -452,14 +511,19 @@ function validateModelXml(xml: string): string[] {
 
 function validateModelSettings(xml: string, state: WizardState): string[] {
   const errors: string[] = [];
-  if (!xml.includes("<object id=\"1\">")) errors.push("model_settings.config: object id=1 ausente.");
-  if (!xml.includes("<part id=\"1\" subtype=\"normal_part\"")) errors.push("model_settings.config: part normal_part ausente.");
+  if (!xml.includes('<object id="1">')) errors.push("model_settings.config: object id=1 ausente.");
+  if (!xml.includes('<part id="1" subtype="normal_part"'))
+    errors.push("model_settings.config: part normal_part ausente.");
   if (!xml.includes("<plate>")) errors.push("model_settings.config: plate ausente.");
-  if (!xml.includes("<model_instance>")) errors.push("model_settings.config: model_instance ausente.");
+  if (!xml.includes("<model_instance>"))
+    errors.push("model_settings.config: model_instance ausente.");
   if (!xml.includes('key="object_id" value="1"') || !xml.includes('key="instance_id" value="0"')) {
     errors.push("model_settings.config: vínculo plate → object/instance ausente.");
   }
-  if (state.printer && !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)) {
+  if (
+    state.printer &&
+    !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)
+  ) {
     errors.push("model_settings.config: printer_model_id da placa ausente.");
   }
   if (!xml.includes(`key="bed_type" value="${xmlEscape(state.bed)}"`)) {
@@ -473,10 +537,16 @@ function validateSliceInfo(xml: string, state: WizardState): string[] {
   if (!xml.includes('header_item key="X-BBL-Client-Type" value="slicer"')) {
     errors.push("slice_info.config: header X-BBL-Client-Type ausente.");
   }
-  if (state.printer && !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)) {
+  if (
+    state.printer &&
+    !xml.includes(`key="printer_model_id" value="${xmlEscape(state.printer.modelId)}"`)
+  ) {
     errors.push("slice_info.config: printer_model_id ausente.");
   }
-  if (state.printer && !xml.includes(`key="nozzle_diameters" value="${xmlEscape(state.printer.printerVariant)}"`)) {
+  if (
+    state.printer &&
+    !xml.includes(`key="nozzle_diameters" value="${xmlEscape(state.printer.printerVariant)}"`)
+  ) {
     errors.push("slice_info.config: nozzle_diameters ausente.");
   }
   return errors;
@@ -498,7 +568,11 @@ export interface ValidationReport {
   warnings: string[];
 }
 
-function emptyReport(errors: string[], warnings: string[] = [], needsSync = false): ValidationReport {
+function emptyReport(
+  errors: string[],
+  warnings: string[] = [],
+  needsSync = false,
+): ValidationReport {
   return {
     ok: false,
     needsSync,
@@ -521,9 +595,19 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
     return emptyReport(["Complete as etapas anteriores (STL, impressora, material e finalidade)."]);
   }
   const supportOn =
-    state.supportMode === "off" ? false : state.supportMode === "auto" ? (state.analysis?.needsSupport ?? false) : true;
+    state.supportMode === "off"
+      ? false
+      : state.supportMode === "auto"
+        ? (state.analysis?.needsSupport ?? false)
+        : true;
   const supportType: "normal" | "tree" =
-    state.supportMode === "tree" ? "tree" : state.supportMode === "normal" ? "normal" : state.analysis?.suggestedType === "tree" ? "tree" : "normal";
+    state.supportMode === "tree"
+      ? "tree"
+      : state.supportMode === "normal"
+        ? "normal"
+        : state.analysis?.suggestedType === "tree"
+          ? "tree"
+          : "normal";
   const sup = supportConfig(state.material, supportType, supportOn);
 
   let cfg: Record<string, unknown>;
@@ -552,7 +636,9 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
   const plateErrors = validatePlate1(plate1, state);
 
   const dssRaw = cfg.different_settings_to_system;
-  const dssArr = Array.isArray(dssRaw) ? (dssRaw as unknown[]).map((s) => (typeof s === "string" ? s : "")) : [];
+  const dssArr = Array.isArray(dssRaw)
+    ? (dssRaw as unknown[]).map((s) => (typeof s === "string" ? s : ""))
+    : [];
   const split = (i: number) => (dssArr[i] ? dssArr[i].split(";").filter(Boolean) : []);
   const dssSlots = {
     process: split(0),
@@ -562,14 +648,23 @@ export async function previewValidation(state: WizardState): Promise<ValidationR
   };
 
   const keyCount = Object.keys(cfg).length;
-  const plateInfo = plateErrors.length === 0 ? { nozzle: parseFloat(state.printer.printerVariant), version: 2 } : null;
+  const plateInfo =
+    plateErrors.length === 0
+      ? { nozzle: parseFloat(state.printer.printerVariant), version: 2 }
+      : null;
   const warnings: string[] = [];
   if (dssSlots.process.length === 0 && dssSlots.filament.length === 0) {
     warnings.push("Nenhum override detectado — o .3mf usará somente os defaults do preset base.");
   }
 
   const needsSync = cfgErrors.some((e) => /incompleto|sincroniz/i.test(e));
-  const errors = [...cfgErrors, ...modelErrors, ...modelSettingsErrors, ...sliceInfoErrors, ...plateErrors];
+  const errors = [
+    ...cfgErrors,
+    ...modelErrors,
+    ...modelSettingsErrors,
+    ...sliceInfoErrors,
+    ...plateErrors,
+  ];
 
   return {
     ok: errors.length === 0,
@@ -595,17 +690,34 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
   const printer = state.printer;
   const material = state.material;
 
-  const chosen = state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? state.orientations[0];
+  const chosen =
+    state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? state.orientations[0];
   const rotation: Vec3 = chosen?.rotation ?? [0, 0, 0];
 
   const supportOn =
-    state.supportMode === "off" ? false : state.supportMode === "auto" ? (state.analysis?.needsSupport ?? false) : true;
+    state.supportMode === "off"
+      ? false
+      : state.supportMode === "auto"
+        ? (state.analysis?.needsSupport ?? false)
+        : true;
   const supportType: "normal" | "tree" =
-    state.supportMode === "tree" ? "tree" : state.supportMode === "normal" ? "normal" : state.analysis?.suggestedType === "tree" ? "tree" : "normal";
+    state.supportMode === "tree"
+      ? "tree"
+      : state.supportMode === "normal"
+        ? "normal"
+        : state.analysis?.suggestedType === "tree"
+          ? "tree"
+          : "normal";
 
   const sup = supportConfig(material, supportType, supportOn);
 
-  const { cfg, processLeaf, filamentLeaf } = await assembleCfg(state, printer, material, sup, state.bed);
+  const { cfg, processLeaf, filamentLeaf } = await assembleCfg(
+    state,
+    printer,
+    material,
+    sup,
+    state.bed,
+  );
 
   const errors = validateCfg(cfg, state);
   if (errors.length) throw new Error(`Validação falhou:\n- ${errors.join("\n- ")}`);
@@ -649,8 +761,26 @@ export async function generate3mfAsync(state: WizardState): Promise<GenerateResu
   const baseName = `${modelBase}_${printerShort}_${materialShort}_${purposeShort}`;
   const fileName = `${baseName}.3mf`;
 
-  const summary = buildSummary(state, printer, material, sup, transformed.size, processLeaf, filamentLeaf);
-  const reportText = buildReport(state, printer, material, sup, transformed.size, cfg, processLeaf, filamentLeaf, resolveIroningType(state));
+  const summary = buildSummary(
+    state,
+    printer,
+    material,
+    sup,
+    transformed.size,
+    processLeaf,
+    filamentLeaf,
+  );
+  const reportText = buildReport(
+    state,
+    printer,
+    material,
+    sup,
+    transformed.size,
+    cfg,
+    processLeaf,
+    filamentLeaf,
+    resolveIroningType(state),
+  );
   const reportFileName = `${baseName}_LEIA-ME.txt`;
   const reportBlob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
 
@@ -709,7 +839,9 @@ function buildSummary(
     `Suporte: ${sup.supportOn ? `LIGADO (${sup.type.toUpperCase()})` : "DESLIGADO"}`,
   ];
   if (sup.supportOn) {
-    lines.push(`  ↳ folga topo: ${sup.topZ}mm, ângulo: ${sup.thresholdAngle}°, XY: ${sup.xyDistance}mm, interfaces: ${sup.interfaceTop}/${sup.interfaceBottom}, padrão: ${sup.interfacePattern}`);
+    lines.push(
+      `  ↳ folga topo: ${sup.topZ}mm, ângulo: ${sup.thresholdAngle}°, XY: ${sup.xyDistance}mm, interfaces: ${sup.interfaceTop}/${sup.interfaceBottom}, padrão: ${sup.interfacePattern}`,
+    );
   }
   lines.push(`Preset processo base: ${processLeaf}`);
   lines.push(`Preset filamento base: ${filamentLeaf}`);
@@ -731,7 +863,9 @@ function buildReport(
 ): string {
   const L: string[] = [];
   const isDeco = state.purpose === "decoracao";
-  const isTechnical = ["PETG", "PETG-CF", "ABS", "ASA", "PA", "PLA-CF"].includes(material.filamentType);
+  const isTechnical = ["PETG", "PETG-CF", "ABS", "ASA", "PA", "PLA-CF"].includes(
+    material.filamentType,
+  );
   const layer = String((cfg.layer_height as string) ?? "");
   const walls = String((cfg.wall_loops as string) ?? "");
   const infill = String((cfg.sparse_infill_density as string) ?? "");
@@ -741,7 +875,9 @@ function buildReport(
   L.push("=".repeat(48));
   L.push("");
   L.push(`Arquivo original : ${state.mesh?.fileName}`);
-  L.push(`Peça (após rot.) : ${size[0].toFixed(1)} × ${size[1].toFixed(1)} × ${size[2].toFixed(1)} mm`);
+  L.push(
+    `Peça (após rot.) : ${size[0].toFixed(1)} × ${size[1].toFixed(1)} × ${size[2].toFixed(1)} mm`,
+  );
   L.push(`Impressora       : ${printer.displayName} (${printer.id})`);
   L.push(`Placa            : ${state.bed}`);
   L.push(`Material / cor   : ${material.label} — ${state.color}`);
@@ -752,17 +888,27 @@ function buildReport(
 
   L.push("O QUE FOI APLICADO E POR QUÊ");
   L.push("-".repeat(48));
-  L.push(`• Altura de camada ${layer} mm — equilíbrio entre acabamento e tempo para a finalidade "${state.purpose}".`);
+  L.push(
+    `• Altura de camada ${layer} mm — equilíbrio entre acabamento e tempo para a finalidade "${state.purpose}".`,
+  );
   L.push(`• ${walls} paredes, preenchimento ${infill} — dimensionado para a finalidade.`);
-  L.push(`• Gerador de parede: ${wallGen}${wallGen === "arachne" ? " — larguras variáveis para preservar detalhes finos." : " — traçado clássico, previsível para peças funcionais."}`);
-  L.push(`• Bico ${material.nozzle}°C / mesa ${material.bed}°C, vazão máx ${material.volSpeed} mm³/s — perfil oficial do material.`);
+  L.push(
+    `• Gerador de parede: ${wallGen}${wallGen === "arachne" ? " — larguras variáveis para preservar detalhes finos." : " — traçado clássico, previsível para peças funcionais."}`,
+  );
+  L.push(
+    `• Bico ${material.nozzle}°C / mesa ${material.bed}°C, vazão máx ${material.volSpeed} mm³/s — perfil oficial do material.`,
+  );
   if (sup.supportOn) {
-    L.push(`• Suporte ${sup.type.toUpperCase()} ligado: folga de topo ${sup.topZ}mm, ângulo ${sup.thresholdAngle}°, XY ${sup.xyDistance}mm — evita solda em ${material.filamentType} e melhora remoção.`);
+    L.push(
+      `• Suporte ${sup.type.toUpperCase()} ligado: folga de topo ${sup.topZ}mm, ângulo ${sup.thresholdAngle}°, XY ${sup.xyDistance}mm — evita solda em ${material.filamentType} e melhora remoção.`,
+    );
   } else {
     L.push("• Sem suporte — a orientação escolhida elimina overhangs críticos.");
   }
   if (ironingType !== "no ironing") {
-    L.push(`• Ironing "${ironingType}" (fluxo ${state.ironing.flow}, spacing ${state.ironing.spacing}mm, ${state.ironing.speed} mm/s) — alisa as superfícies de topo, tirando as linhas de camada. Ideal para display.`);
+    L.push(
+      `• Ironing "${ironingType}" (fluxo ${state.ironing.flow}, spacing ${state.ironing.spacing}mm, ${state.ironing.speed} mm/s) — alisa as superfícies de topo, tirando as linhas de camada. Ideal para display.`,
+    );
   } else {
     L.push("• Ironing desligado — não necessário para esta finalidade.");
   }
@@ -775,12 +921,12 @@ function buildReport(
     L.push("da geometria da peça — NÃO é um parâmetro simples do preset, por isso");
     L.push("não vem embarcado no .3mf. Faça em 30 segundos:");
     L.push("");
-    L.push('  1) Abra o .3mf no Bambu Studio.');
-    L.push('  2) Selecione a peça.');
+    L.push("  1) Abra o .3mf no Bambu Studio.");
+    L.push("  2) Selecione a peça.");
     L.push('  3) Na barra superior, clique no ícone "Variable Layer Height"');
-    L.push('     (o desenho de gota, no fim da barra).');
+    L.push("     (o desenho de gota, no fim da barra).");
     L.push('  4) Clique em "Adaptive".');
-    L.push('  5) Ajuste o slider Quality/Speed para ~0.3–0.4 (mais perto de Quality).');
+    L.push("  5) Ajuste o slider Quality/Speed para ~0.3–0.4 (mais perto de Quality).");
     L.push('  6) Clique em "Smooth" com Radius ~5 para transições suaves.');
     L.push('  7) Feche o painel e clique em "Slice".');
     L.push("");
@@ -794,18 +940,24 @@ function buildReport(
   if (isNylonFamily(material)) {
     L.push(`• NYLON/PA (${material.filamentType}) — REQUER câmara FECHADA (P1S / X1C / H2D).`);
     L.push("  A1 e A1 mini são frame ABERTO → risco alto de empeno/delaminação.");
-    L.push("• Secar o filamento 8–12 h a 70–80 °C antes de imprimir e manter em DRY BOX durante toda a impressão.");
-    L.push("• Se o material tiver CF/GF (fibras): use BICO ENDURECIDO (hardened steel) — bico latão desgasta rápido.");
+    L.push(
+      "• Secar o filamento 8–12 h a 70–80 °C antes de imprimir e manter em DRY BOX durante toda a impressão.",
+    );
+    L.push(
+      "• Se o material tiver CF/GF (fibras): use BICO ENDURECIDO (hardened steel) — bico latão desgasta rápido.",
+    );
     L.push(`• Placa recomendada: Engineering Plate (você selecionou "${state.bed}").`);
   } else if (isTechnical) {
     L.push(`• Secar o filamento (${material.filamentType} absorve umidade → bolhas e stringing).`);
   }
   L.push(`• Conferir se a impressora ativa no Bambu Studio é "${printer.displayName}".`);
   L.push(`• Confirmar a placa selecionada: "${state.bed}".`);
-  L.push("• No Preview, trocar o tema para \"Layer Height\" e conferir a distribuição das camadas.");
+  L.push('• No Preview, trocar o tema para "Layer Height" e conferir a distribuição das camadas.');
   L.push("• Calibrar Flow ao menos 1x por spool nova (os valores aqui são ponto de partida).");
   if (sup.supportOn && (material.filamentType === "PLA" || material.filamentType === "PETG")) {
-    L.push(`• Suporte em ${material.filamentType} tende a soldar em pontos críticos — considere Support Painting manual.`);
+    L.push(
+      `• Suporte em ${material.filamentType} tende a soldar em pontos críticos — considere Support Painting manual.`,
+    );
   }
   L.push("");
   L.push("Gerado por SlicerAI · 100% client-side.");

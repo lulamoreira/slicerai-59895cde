@@ -7,7 +7,9 @@ export function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(LS_HISTORY);
     return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 export function saveHistory(entry: HistoryEntry) {
@@ -26,7 +28,9 @@ export function loadSpecialPresets(): SpecialPreset[] {
   try {
     const raw = localStorage.getItem(LS_SPECIAL_PRESETS);
     return raw ? (JSON.parse(raw) as SpecialPreset[]) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 export function saveSpecialPreset(name: string, overrides: SpecialOverride[]): SpecialPreset {
@@ -36,9 +40,7 @@ export function saveSpecialPreset(name: string, overrides: SpecialOverride[]): S
   const preset: SpecialPreset = existing
     ? { ...existing, overrides, createdAt: Date.now() }
     : { id: crypto.randomUUID(), name: trimmed, overrides, createdAt: Date.now() };
-  const next = existing
-    ? all.map((p) => (p.id === existing.id ? preset : p))
-    : [preset, ...all];
+  const next = existing ? all.map((p) => (p.id === existing.id ? preset : p)) : [preset, ...all];
   localStorage.setItem(LS_SPECIAL_PRESETS, JSON.stringify(next.slice(0, 30)));
   return preset;
 }
