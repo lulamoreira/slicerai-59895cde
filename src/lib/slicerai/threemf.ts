@@ -1,7 +1,7 @@
 import JSZip from "jszip";
-import type { MaterialBase, Printer, STLMesh, Vec3, WizardState } from "./types";
-import { findFilamentInherits, findProcessInherits } from "./catalog";
-import { purposeProfile, supportConfig, type SupportConfig } from "./rules";
+import type { MaterialBase, Printer, STLMesh, Vec3, WizardState, SpecialOverride } from "./types";
+import { findFilamentInherits, findProcessInherits, snapLayerToPreset } from "./catalog";
+import { purposeProfile, supportConfig, isNylonFamily, type SupportConfig } from "./rules";
 import { resolveChain } from "./resolve";
 
 const VERSION = "02.07.01.62";
@@ -168,7 +168,12 @@ async function assembleCfg(
   const prof = purposeProfile(purpose, material);
   const overrides = state.overrides;
 
-  const layerStr = overrides.layer_height ?? String(prof.layer);
+  // Snap requested layer height to a real process preset for this printer+bico.
+  // Bicos maiores (0.6/0.8) usam camadas maiores naturalmente.
+  const requestedLayer = overrides.layer_height
+    ? parseFloat(overrides.layer_height)
+    : snapLayerToPreset(printer, prof.layer);
+  const layerStr = Number.isFinite(requestedLayer) ? requestedLayer.toFixed(2) : String(prof.layer);
   const walls = overrides.wall_loops ?? String(prof.walls);
   const infill = overrides.sparse_infill_density ?? `${prof.infill}%`;
   const pattern = overrides.sparse_infill_pattern ?? prof.pattern;
@@ -196,10 +201,13 @@ async function assembleCfg(
   copy(processCfg);
   copy(filamentCfg);
 
+  // 1ª camada = pelo menos a camada corrente (bico grande não imprime 0.2 na 1ª).
+  const initialLayer = Math.max(parseFloat(layerStr), 0.2).toFixed(2);
+
   // ----- Process overrides (scalar strings) -----
   const processOverrides: Record<string, string> = {
     layer_height: layerStr,
-    initial_layer_print_height: "0.2",
+    initial_layer_print_height: initialLayer,
     wall_loops: walls,
     sparse_infill_density: infill,
     sparse_infill_pattern: pattern,
@@ -237,25 +245,49 @@ async function assembleCfg(
     ? (resolvedTypeRaw[0] as string)
     : material.filamentType;
 
+  const isNylon = isNylonFamily(material);
+
   const filamentOverrides: Record<string, string[]> = {
     filament_type: [resolvedType],
     filament_diameter: ["1.75"],
     filament_is_support: ["0"],
-    nozzle_temperature: [String(material.nozzle)],
-    nozzle_temperature_initial_layer: [String(material.nozzleInitial ?? material.nozzle)],
-    hot_plate_temp: [String(material.bed)],
-    hot_plate_temp_initial_layer: [String(material.bed)],
-    filament_flow_ratio: [String(material.flow)],
-    fan_min_speed: [String(material.fanMin)],
-    fan_max_speed: [String(material.fanMax)],
-    close_fan_the_first_x_layers: ["1"],
-    filament_retraction_length: [String(material.retraction)],
   };
-  // HF/High-Speed materials: keep the preset's own (high) volumetric speed.
-  if (!material.highFlow) {
-    filamentOverrides.filament_max_volumetric_speed = [String(material.volSpeed)];
+  // PA/Nylon: preserve preset temps/flow/fan/retraction — Bambu já calibrou.
+  if (!isNylon) {
+    filamentOverrides.nozzle_temperature = [String(material.nozzle)];
+    filamentOverrides.nozzle_temperature_initial_layer = [String(material.nozzleInitial ?? material.nozzle)];
+    filamentOverrides.hot_plate_temp = [String(material.bed)];
+    filamentOverrides.hot_plate_temp_initial_layer = [String(material.bed)];
+    filamentOverrides.filament_flow_ratio = [String(material.flow)];
+    filamentOverrides.fan_min_speed = [String(material.fanMin)];
+    filamentOverrides.fan_max_speed = [String(material.fanMax)];
+    filamentOverrides.close_fan_the_first_x_layers = ["1"];
+    filamentOverrides.filament_retraction_length = [String(material.retraction)];
+    // HF/High-Speed materials: keep the preset's own (high) volumetric speed.
+    if (!material.highFlow) {
+      filamentOverrides.filament_max_volumetric_speed = [String(material.volSpeed)];
+    }
   }
   for (const [k, v] of Object.entries(filamentOverrides)) cfg[k] = v;
+
+  // ----- Special overrides (user-defined) — applied LAST, wins over everything. -----
+  const specialProcessKeys: string[] = [];
+  const specialFilamentKeys: string[] = [];
+  const isFilamentKey = (k: string) =>
+    /^(filament_|nozzle_temperature|hot_plate|cool_plate|textured_plate|fan_|slow_down_|chamber_temperature|close_fan_the_first)/.test(k)
+    || Array.isArray(filamentCfg[k]);
+  for (const ov of (state.specialOverrides ?? [])) {
+    const k = (ov.key ?? "").trim();
+    const v = ov.value ?? "";
+    if (!k) continue;
+    if (isFilamentKey(k)) {
+      cfg[k] = [v];
+      specialFilamentKeys.push(k);
+    } else {
+      cfg[k] = v;
+      specialProcessKeys.push(k);
+    }
+  }
 
   // ----- Project lineage (last write wins) -----
   cfg.from = "project";
@@ -270,8 +302,8 @@ async function assembleCfg(
   cfg.curr_bed_type = bed;
   cfg.filament_colour = [state.color.toUpperCase()];
   cfg.different_settings_to_system = [
-    Object.keys(processOverrides).join(";"),
-    Object.keys(filamentOverrides).join(";"),
+    Array.from(new Set([...Object.keys(processOverrides), ...specialProcessKeys])).join(";"),
+    Array.from(new Set([...Object.keys(filamentOverrides), ...specialFilamentKeys])).join(";"),
     "",
   ];
 
