@@ -1303,3 +1303,178 @@ function ValidationSummary({
     </div>
   );
 }
+
+// -------- Special settings (user-defined Bambu key overrides) --------
+
+// Small allowlist of "known" Bambu keys used to soft-validate the user's input.
+// We DON'T block — just warn — so future keys keep working.
+const KNOWN_BAMBU_KEYS = new Set<string>([
+  // process
+  "brim_type", "brim_width", "brim_object_gap", "raft_layers",
+  "seam_position", "seam_gap", "wall_sequence", "sparse_infill_pattern",
+  "top_shell_layers", "bottom_shell_layers", "top_surface_pattern", "bottom_surface_pattern",
+  "wall_generator", "wall_loops", "infill_wall_overlap", "sparse_infill_density",
+  "layer_height", "initial_layer_print_height", "outer_wall_speed", "inner_wall_speed",
+  "sparse_infill_speed", "internal_solid_infill_speed", "top_surface_speed",
+  "travel_speed", "initial_layer_speed", "print_sequence", "skirt_loops",
+  "enable_prime_tower", "prime_tower_width", "flush_multiplier",
+  "detect_thin_wall", "detect_overhang_wall", "reduce_infill_retraction",
+  "ironing_type", "ironing_flow", "ironing_spacing", "ironing_speed",
+  // filament
+  "filament_type", "filament_diameter", "filament_flow_ratio",
+  "filament_max_volumetric_speed", "filament_retraction_length",
+  "nozzle_temperature", "nozzle_temperature_initial_layer",
+  "hot_plate_temp", "hot_plate_temp_initial_layer",
+  "fan_min_speed", "fan_max_speed", "close_fan_the_first_x_layers",
+  "chamber_temperature", "slow_down_layer_time", "slow_down_min_speed",
+]);
+
+function SpecialSettingsBlock({
+  state, onChange,
+}: {
+  state: WizardState;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
+  const [presets, setPresets] = useState<SpecialPreset[]>(() => loadSpecialPresets());
+  const [presetName, setPresetName] = useState("");
+
+  const items: SpecialOverride[] = state.specialOverrides ?? [];
+  const setItems = (next: SpecialOverride[]) => onChange({ specialOverrides: next });
+
+  const addRow = () => setItems([...items, { key: "", value: "" }]);
+  const removeRow = (i: number) => setItems(items.filter((_, idx) => idx !== i));
+  const patchRow = (i: number, patch: Partial<SpecialOverride>) =>
+    setItems(items.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+
+  const applyPreset = (id: string) => {
+    const p = presets.find((x) => x.id === id);
+    if (!p) return;
+    setItems(p.overrides.map((o) => ({ ...o })));
+    toast.success(`Preset "${p.name}" aplicado`);
+  };
+  const savePreset = () => {
+    const cleaned = items.filter((o) => o.key.trim());
+    if (cleaned.length === 0) {
+      toast.error("Adicione ao menos uma chave antes de salvar");
+      return;
+    }
+    const p = saveSpecialPreset(presetName || `Preset ${presets.length + 1}`, cleaned);
+    setPresets(loadSpecialPresets());
+    setPresetName("");
+    toast.success(`Preset "${p.name}" salvo`);
+  };
+  const removePreset = (id: string) => {
+    deleteSpecialPreset(id);
+    setPresets(loadSpecialPresets());
+  };
+
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="text-sm font-medium flex items-center gap-2">
+        Configurações especiais (avançado)
+        <Badge variant="outline" className="text-[10px]">{items.length}</Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-3 space-y-3">
+        <Alert>
+          <AlertTriangle className="w-4 h-4" />
+          <AlertDescription className="text-xs">
+            Estes valores <strong>sobrescrevem tudo</strong> (processo, filamento e overrides normais).
+            Use só se você conhece a chave Bambu que está mexendo. Ex.: <code>brim_type</code>=<code>outer_only</code>,
+            <code> seam_position</code>=<code>back</code>.
+          </AlertDescription>
+        </Alert>
+
+        {presets.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs shrink-0">Aplicar preset especial</Label>
+            <Select onValueChange={applyPreset}>
+              <SelectTrigger className="h-8"><SelectValue placeholder="Escolher preset salvo…" /></SelectTrigger>
+              <SelectContent>
+                {presets.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.overrides.length} chave(s)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {items.length === 0 && (
+            <div className="text-xs text-muted-foreground italic">Nenhuma chave definida.</div>
+          )}
+          {items.map((row, i) => {
+            const k = row.key.trim();
+            const unknown = k.length > 0 && !KNOWN_BAMBU_KEYS.has(k);
+            return (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <div className="space-y-1">
+                  <Input
+                    value={row.key}
+                    placeholder="chave (ex: brim_type)"
+                    onChange={(e) => patchRow(i, { key: e.target.value })}
+                    className={`font-mono text-xs ${unknown ? "border-yellow-500/60" : ""}`}
+                  />
+                  {unknown && (
+                    <div className="text-[10px] text-yellow-600 dark:text-yellow-400">
+                      Chave não reconhecida — será aplicada mesmo assim.
+                    </div>
+                  )}
+                </div>
+                <Input
+                  value={row.value}
+                  placeholder="valor (ex: outer_only)"
+                  onChange={(e) => patchRow(i, { value: e.target.value })}
+                  className="font-mono text-xs"
+                />
+                <Button size="sm" variant="ghost" onClick={() => removeRow(i)}>
+                  <XCircle className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })}
+          <Button size="sm" variant="outline" onClick={addRow}>
+            + Adicionar chave
+          </Button>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <Label className="text-xs">Salvar as chaves acima como preset</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              value={presetName}
+              placeholder="Nome do preset"
+              onChange={(e) => setPresetName(e.target.value)}
+              className="h-8"
+            />
+            <Button size="sm" onClick={savePreset}>Salvar preset</Button>
+          </div>
+
+          {presets.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <Label className="text-xs">Presets salvos</Label>
+              <div className="space-y-1">
+                {presets.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between text-xs bg-muted/40 rounded px-2 py-1">
+                    <span className="truncate">
+                      {p.name} · <span className="text-muted-foreground">{p.overrides.length} chave(s)</span>
+                    </span>
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => applyPreset(p.id)}>Aplicar</Button>
+                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => removePreset(p.id)}>
+                        <XCircle className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
