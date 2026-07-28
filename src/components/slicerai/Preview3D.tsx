@@ -80,7 +80,7 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
   return (
     <mesh geometry={geom} castShadow receiveShadow>
       <meshStandardMaterial
-        color={useVertexColors ? undefined : color || "#F5C518"}
+        color={useVertexColors ? undefined : "#9ca3af"}
         vertexColors={useVertexColors}
         roughness={0.6}
         metalness={0.05}
