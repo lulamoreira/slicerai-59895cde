@@ -312,6 +312,12 @@ async function assembleCfg(
     tree_support_branch_diameter: "2",
     tree_support_tip_diameter: "0.4",
   };
+  // PA/Nylon anti-warp: brim outer_only por padrão para segurar cantos.
+  if (isNylonFamily(material)) {
+    processOverrides.brim_type = "outer_only";
+    processOverrides.brim_width = "10";
+    processOverrides.brim_object_gap = "0.1";
+  }
   for (const [k, v] of Object.entries(processOverrides)) cfg[k] = v;
 
   // ----- Filament overrides (arrays of 1 string) -----
@@ -349,12 +355,21 @@ async function assembleCfg(
     if (!material.highFlow) {
       filamentOverrides.filament_max_volumetric_speed = [String(material.volSpeed)];
     }
+  } else {
+    // PA/Nylon anti-warp: fan quase desligado + sem fan nas primeiras 3 camadas.
+    filamentOverrides.fan_min_speed = ["0"];
+    filamentOverrides.fan_max_speed = ["10"];
+    filamentOverrides.close_fan_the_first_x_layers = ["3"];
+    filamentOverrides.overhang_fan_threshold = ["0%"];
+    filamentOverrides.overhang_fan_speed = ["10"];
   }
 
   // Bed temp — ALWAYS write both the plate-specific key AND hot_plate_temp
   // (Bambu Studio reads the plate-specific one when curr_bed_type is set;
   // mirroring hot_plate_temp keeps the settings coherent for any viewer).
-  const defaultBedTemp = String(material.bed);
+  // Para PA/Nylon usar default alto (110°C) se o preset não trouxer nada mais quente.
+  const nylonBedFloor = isNylon ? Math.max(material.bed, 110) : material.bed;
+  const defaultBedTemp = String(nylonBedFloor);
   filamentOverrides[bedTempKey] = [defaultBedTemp];
   filamentOverrides[bedTempInitKey] = [defaultBedTemp];
   filamentOverrides.hot_plate_temp = [defaultBedTemp];
