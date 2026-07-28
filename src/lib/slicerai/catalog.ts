@@ -37,11 +37,7 @@ const SUFFIX_COMPAT: Record<string, string> = {
 };
 
 /** Enclosure-open models — used to warn about technical materials. */
-export const OPEN_PRINTERS = new Set([
-  "Bambu Lab A1",
-  "Bambu Lab A1 mini",
-  "Bambu Lab P1P",
-]);
+export const OPEN_PRINTERS = new Set(["Bambu Lab A1", "Bambu Lab A1 mini", "Bambu Lab P1P"]);
 
 // -------- Seed (minimal offline fallback) --------
 
@@ -78,30 +74,42 @@ function extractNozzle(name: string): string {
 }
 
 function stripPrefixNozzle(name: string): string {
-  return name.replace(/^Bambu Lab\s+/i, "").replace(/\s*\d\.\d\s*nozzle$/i, "").trim();
+  return name
+    .replace(/^Bambu Lab\s+/i, "")
+    .replace(/\s*\d\.\d\s*nozzle$/i, "")
+    .trim();
 }
 
-/** Candidate suffix codes for a machine name, from most literal to most abbreviated. */
-function suffixCandidates(machineName: string): string[] {
+/** Candidate suffix codes for a machine name, from most literal to most abbreviated.
+ *  When nozzle ≠ 0.4, includes the "<code> <nozzle> nozzle" variants used by non-default bicos. */
+function suffixCandidates(machineName: string, nozzle?: string): string[] {
   const core = stripPrefixNozzle(machineName);
-  const out = new Set<string>();
-  out.add(core);
-  // "A1 mini" → "A1M"; "P1 P" → "P1P".
-  out.add(core.replace(/\s+mini$/i, "M").replace(/\s+/g, ""));
-  // "X1 Carbon" → "X1C"; drop trailing words to single letter.
+  const noz = nozzle ?? extractNozzle(machineName);
+  const isDefault = noz === "0.4";
+  const bases = new Set<string>();
+  bases.add(core);
+  bases.add(core.replace(/\s+mini$/i, "M").replace(/\s+/g, ""));
   const words = core.split(/\s+/);
   if (words.length > 1) {
-    const initials = words[0] + words.slice(1).map((w) => w[0]?.toUpperCase() ?? "").join("");
-    out.add(initials);
-    out.add(words[0]);
+    const initials =
+      words[0] +
+      words
+        .slice(1)
+        .map((w) => w[0]?.toUpperCase() ?? "")
+        .join("");
+    bases.add(initials);
+    bases.add(words[0]);
   }
-  // Handle "H2 D" style: also try the first word alone.
-  return Array.from(out).filter(Boolean);
+  const baseArr = Array.from(bases).filter(Boolean);
+  if (isDefault) return baseArr;
+  // For non-0.4 nozzles, presets add " <nozzle> nozzle" to the suffix.
+  const withNozzle = baseArr.map((b) => `${b} ${noz} nozzle`);
+  return [...withNozzle, ...baseArr];
 }
 
 /** Chooses the suffix whose "@BBL <code>" has the MOST filament entries. */
-function pickSuffix(machineName: string, filamentNames: string[]): string {
-  const cands = suffixCandidates(machineName);
+function pickSuffix(machineName: string, filamentNames: string[], nozzle?: string): string {
+  const cands = suffixCandidates(machineName, nozzle);
   let best = cands[0] ?? stripPrefixNozzle(machineName);
   let bestCount = -1;
   for (const c of cands) {
@@ -117,17 +125,14 @@ function pickSuffix(machineName: string, filamentNames: string[]): string {
 }
 
 function normalizeMachineEntries(index: MasterIndex): MasterEntry[] {
-  const seen = new Set<string>();
   const out: MasterEntry[] = [];
+  const seen = new Set<string>();
   for (const m of index.machine_list) {
     if (!m?.name) continue;
     if (/template/i.test(m.name)) continue;
     if (!/0\.\d+\s+nozzle$/i.test(m.name)) continue;
-    // Only expose 0.4 nozzle variants (one printer per model).
-    if (!/0\.4\s+nozzle$/i.test(m.name)) continue;
-    const display = stripPrefixNozzle(m.name);
-    if (seen.has(display)) continue;
-    seen.add(display);
+    if (seen.has(m.name)) continue;
+    seen.add(m.name);
     out.push(m);
   }
   return out;
@@ -140,7 +145,7 @@ function buildPrintersFromMaster(index: MasterIndex): Printer[] {
   for (const m of machines) {
     const displayName = stripPrefixNozzle(m.name);
     const variant = extractNozzle(m.name);
-    const suffix = pickSuffix(m.name, filamentNames);
+    const suffix = pickSuffix(m.name, filamentNames, variant);
     printers.push({
       id: m.name,
       displayName,
@@ -152,23 +157,56 @@ function buildPrintersFromMaster(index: MasterIndex): Printer[] {
       fromGithub: true,
     });
   }
-  // Sort alphabetically.
-  printers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  printers.sort(
+    (a, b) =>
+      a.displayName.localeCompare(b.displayName) ||
+      parseFloat(a.printerVariant) - parseFloat(b.printerVariant),
+  );
   return printers;
 }
 
-/** Merge master-derived printers with the seed (seed wins on missing fields). */
+/** Merge master-derived printers with the seed (all nozzle variants exposed). */
 export function loadPrinters(): Printer[] {
   const index = getMasterIndexSync();
   if (!index) return SEED_PRINTERS;
   const derived = buildPrintersFromMaster(index);
-  const byModel = new Map<string, Printer>();
-  for (const p of derived) byModel.set(p.printerModel, p);
+  const byId = new Map<string, Printer>();
+  for (const p of derived) byId.set(p.id, p);
   for (const s of SEED_PRINTERS) {
-    // If the master doesn't know the seed printer, still expose it.
-    if (!byModel.has(s.printerModel)) byModel.set(s.printerModel, s);
+    if (!byId.has(s.id)) byId.set(s.id, s);
   }
-  return Array.from(byModel.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return Array.from(byId.values()).sort(
+    (a, b) =>
+      a.displayName.localeCompare(b.displayName) ||
+      parseFloat(a.printerVariant) - parseFloat(b.printerVariant),
+  );
+}
+
+/** Unique printer models (grouped) — used by the "modelo" dropdown. */
+export function listPrinterModels(): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of loadPrinters()) {
+    if (!seen.has(p.printerModel)) {
+      seen.add(p.printerModel);
+      out.push(p.printerModel);
+    }
+  }
+  return out;
+}
+
+/** Nozzle diameters available for a given model (from BBL.json machine_list). */
+export function listNozzlesForModel(model: string): string[] {
+  const nozzles = loadPrinters()
+    .filter((p) => p.printerModel === model)
+    .map((p) => p.printerVariant);
+  return Array.from(new Set(nozzles)).sort((a, b) => parseFloat(a) - parseFloat(b));
+}
+
+export function findPrinter(model: string, nozzle: string): Printer | null {
+  return (
+    loadPrinters().find((p) => p.printerModel === model && p.printerVariant === nozzle) ?? null
+  );
 }
 
 export function getUpdatedAt(): string | null {
@@ -206,29 +244,136 @@ const TYPE_PATTERNS: Array<{ re: RegExp; type: string; id: string; label: string
   { re: /PEEK/i, type: "PEEK", id: "PEEK", label: "PEEK" },
 ];
 
-const TYPE_DEFAULTS: Record<string, {
-  nozzle: number; nozzleInitial?: number; bed: number;
-  volSpeed: number; flow: number; fanMin: number; fanMax: number;
-  retraction: number; open?: boolean;
-}> = {
-  PLA:      { nozzle: 220, bed: 55, volSpeed: 15, flow: 0.98, fanMin: 60, fanMax: 100, retraction: 0.8 },
-  "PLA-CF": { nozzle: 230, bed: 55, volSpeed: 10, flow: 0.98, fanMin: 40, fanMax: 80,  retraction: 0.8 },
+const TYPE_DEFAULTS: Record<
+  string,
+  {
+    nozzle: number;
+    nozzleInitial?: number;
+    bed: number;
+    volSpeed: number;
+    flow: number;
+    fanMin: number;
+    fanMax: number;
+    retraction: number;
+    open?: boolean;
+  }
+> = {
+  PLA: { nozzle: 220, bed: 55, volSpeed: 15, flow: 0.98, fanMin: 60, fanMax: 100, retraction: 0.8 },
+  "PLA-CF": {
+    nozzle: 230,
+    bed: 55,
+    volSpeed: 10,
+    flow: 0.98,
+    fanMin: 40,
+    fanMax: 80,
+    retraction: 0.8,
+  },
   // PETG anti-teia: 245°C subsequente, 250°C 1ª camada
-  PETG:     { nozzle: 245, nozzleInitial: 250, bed: 70, volSpeed: 8, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0 },
-  "PETG-CF":{ nozzle: 260, bed: 70, volSpeed: 10, flow: 0.95, fanMin: 10, fanMax: 40, retraction: 1.0 },
-  ABS:      { nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0,  fanMax: 30, retraction: 0.8, open: true },
-  ASA:      { nozzle: 260, bed: 90, volSpeed: 12, flow: 0.95, fanMin: 0,  fanMax: 30, retraction: 0.8, open: true },
-  TPU:      { nozzle: 230, bed: 40, volSpeed: 3.5, flow: 0.95, fanMin: 40, fanMax: 80, retraction: 0.4 },
-  PA:       { nozzle: 280, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
-  "PA-CF":  { nozzle: 290, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
-  PC:       { nozzle: 280, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
-  PPS:      { nozzle: 320, bed: 110, volSpeed: 8,  flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
-  PPA:      { nozzle: 300, bed: 100, volSpeed: 10, flow: 0.95, fanMin: 0, fanMax: 20, retraction: 1.0, open: true },
-  PEEK:     { nozzle: 380, bed: 130, volSpeed: 6,  flow: 0.95, fanMin: 0, fanMax: 10, retraction: 1.0, open: true },
+  PETG: {
+    nozzle: 245,
+    nozzleInitial: 250,
+    bed: 70,
+    volSpeed: 8,
+    flow: 0.95,
+    fanMin: 10,
+    fanMax: 40,
+    retraction: 1.0,
+  },
+  "PETG-CF": {
+    nozzle: 260,
+    bed: 70,
+    volSpeed: 10,
+    flow: 0.95,
+    fanMin: 10,
+    fanMax: 40,
+    retraction: 1.0,
+  },
+  ABS: {
+    nozzle: 260,
+    bed: 90,
+    volSpeed: 12,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 30,
+    retraction: 0.8,
+    open: true,
+  },
+  ASA: {
+    nozzle: 260,
+    bed: 90,
+    volSpeed: 12,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 30,
+    retraction: 0.8,
+    open: true,
+  },
+  TPU: { nozzle: 230, bed: 40, volSpeed: 3.5, flow: 0.95, fanMin: 40, fanMax: 80, retraction: 0.4 },
+  PA: {
+    nozzle: 280,
+    bed: 100,
+    volSpeed: 10,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 20,
+    retraction: 1.0,
+    open: true,
+  },
+  "PA-CF": {
+    nozzle: 290,
+    bed: 100,
+    volSpeed: 10,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 20,
+    retraction: 1.0,
+    open: true,
+  },
+  PC: {
+    nozzle: 280,
+    bed: 100,
+    volSpeed: 10,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 20,
+    retraction: 1.0,
+    open: true,
+  },
+  PPS: {
+    nozzle: 320,
+    bed: 110,
+    volSpeed: 8,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 20,
+    retraction: 1.0,
+    open: true,
+  },
+  PPA: {
+    nozzle: 300,
+    bed: 100,
+    volSpeed: 10,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 20,
+    retraction: 1.0,
+    open: true,
+  },
+  PEEK: {
+    nozzle: 380,
+    bed: 130,
+    volSpeed: 6,
+    flow: 0.95,
+    fanMin: 0,
+    fanMax: 10,
+    retraction: 1.0,
+    open: true,
+  },
 };
 
 function detectType(name: string): { type: string; idBase: string; labelBase: string } {
-  for (const p of TYPE_PATTERNS) if (p.re.test(name)) return { type: p.type, idBase: p.id, labelBase: p.label };
+  for (const p of TYPE_PATTERNS)
+    if (p.re.test(name)) return { type: p.type, idBase: p.id, labelBase: p.label };
   return { type: "PLA", idBase: "PLA", labelBase: "PLA" };
 }
 
@@ -269,13 +414,17 @@ function isBaseTemplate(name: string): boolean {
 
 /** Sort helper: keep the Basic/PLA/PETG family first, then technical, then exotic. */
 function materialSortKey(m: MaterialBase): string {
-  const family =
-    /PLA/i.test(m.label) ? "1"
-    : /PETG/i.test(m.label) ? "2"
-    : /ABS|ASA/i.test(m.label) ? "3"
-    : /TPU/i.test(m.label) ? "4"
-    : /PA|Nylon/i.test(m.label) ? "5"
-    : "9";
+  const family = /PLA/i.test(m.label)
+    ? "1"
+    : /PETG/i.test(m.label)
+      ? "2"
+      : /ABS|ASA/i.test(m.label)
+        ? "3"
+        : /TPU/i.test(m.label)
+          ? "4"
+          : /PA|Nylon/i.test(m.label)
+            ? "5"
+            : "9";
   return family + m.label.toLowerCase();
 }
 
@@ -294,7 +443,9 @@ export function listMaterialsForPrinter(printer: Printer): MaterialBase[] {
     const existing = out.get(mat.label);
     if (!existing || (existing.highFlow && !mat.highFlow)) out.set(mat.label, mat);
   }
-  return Array.from(out.values()).sort((a, b) => materialSortKey(a).localeCompare(materialSortKey(b)));
+  return Array.from(out.values()).sort((a, b) =>
+    materialSortKey(a).localeCompare(materialSortKey(b)),
+  );
 }
 
 /**
@@ -316,7 +467,11 @@ function escSuffix(s: string): string {
 }
 
 /** Real process preset name; throws only when nothing at all matches. */
-export function findProcessInherits(printer: Printer, layerMm: number, _bases: string[] = []): string {
+export function findProcessInherits(
+  printer: Printer,
+  layerMm: number,
+  _bases: string[] = [],
+): string {
   void _bases;
   const index = getMasterIndexSync();
   const processes = index?.process_list.map((p) => p.name) ?? [];
@@ -336,7 +491,10 @@ export function findProcessInherits(printer: Printer, layerMm: number, _bases: s
         const m = c.match(/^(\d+\.\d+)mm/);
         if (!m) continue;
         const diff = Math.abs(parseFloat(m[1]) - layerMm);
-        if (diff < bestDiff) { bestDiff = diff; best = c; }
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = c;
+        }
       }
       return best;
     }
@@ -355,6 +513,19 @@ export function findProcessInherits(printer: Printer, layerMm: number, _bases: s
   throw new Error(
     `Preset de processo ainda não sincronizado para ${printer.displayName}. Recarregue em alguns segundos.`,
   );
+}
+
+/** Snap a requested layer height to a value that actually exists for this printer+suffix.
+ *  Bicos maiores usam camadas maiores; presets 0.6/0.8 já ficam na faixa 0.28–0.6mm. */
+export function snapLayerToPreset(printer: Printer, requestedMm: number): number {
+  try {
+    const leaf = findProcessInherits(printer, requestedMm, []);
+    const m = leaf.match(/^(\d+\.\d+)mm/);
+    if (m) return parseFloat(m[1]);
+  } catch {
+    /* ignore */
+  }
+  return requestedMm;
 }
 
 /** Real filament preset name. When material.id is a full leaf name, use it directly. */
@@ -376,7 +547,9 @@ export function findFilamentInherits(printer: Printer, material: MaterialBase): 
     );
     if (partial) return partial;
     // Also try relabelled family (e.g. "Bambu PLA Basic" via detected type).
-    const labelMatch = bases.find((b) => b.endsWith(` ${suffix}`) && detectType(b).type === material.filamentType);
+    const labelMatch = bases.find(
+      (b) => b.endsWith(` ${suffix}`) && detectType(b).type === material.filamentType,
+    );
     if (labelMatch) return labelMatch;
   }
   throw new Error(

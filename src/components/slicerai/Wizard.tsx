@@ -1,14 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Upload, Printer as PrinterIcon, Palette, Target, Scan, Sliders, Download,
-  Copy, RefreshCw, History as HistoryIcon, Hexagon, AlertTriangle,
-  CheckCircle2, XCircle, Info,
+  Upload,
+  Printer as PrinterIcon,
+  Palette,
+  Target,
+  Scan,
+  Sliders,
+  Download,
+  Copy,
+  RefreshCw,
+  History as HistoryIcon,
+  Hexagon,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -23,16 +41,40 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Preview3D, LegendChip } from "./Preview3D";
 import { parseSTL } from "@/lib/slicerai/stl";
 import {
-  loadPrinters, OPEN_PRINTERS, getUpdatedAt, silentSync,
-  listMaterialsForPrinter, buildMaterialFromName,
+  loadPrinters,
+  OPEN_PRINTERS,
+  getUpdatedAt,
+  silentSync,
+  listMaterialsForPrinter,
+  buildMaterialFromName,
 } from "@/lib/slicerai/catalog";
-import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
+import { isNylonFamily, isAbrasive, isOpenPrinter } from "@/lib/slicerai/rules";
+import {
+  analyzeAllOrientations,
+  pickBestOrientation,
+  purposeToTreePreference,
+} from "@/lib/slicerai/support";
 import { generate3mfAsync, previewValidation, type ValidationReport } from "@/lib/slicerai/threemf";
-import { loadHistory, saveHistory, putStl, getStl } from "@/lib/slicerai/storage";
+import {
+  loadHistory,
+  saveHistory,
+  putStl,
+  getStl,
+  loadSpecialPresets,
+  saveSpecialPreset,
+  deleteSpecialPreset,
+} from "@/lib/slicerai/storage";
 import type {
-  HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
+  HistoryEntry,
+  MaterialBase,
+  OrientationResult,
+  Printer,
+  Purpose,
+  STLMesh,
+  SpecialOverride,
+  SpecialPreset,
+  WizardState,
 } from "@/lib/slicerai/types";
-
 
 const STEPS = [
   { id: 1, label: "STL", icon: Upload },
@@ -45,14 +87,40 @@ const STEPS = [
 ];
 
 const PURPOSES: Array<{ id: Purpose; label: string; desc: string }> = [
-  { id: "decoracao", label: "Decoração/Display", desc: "Camadas finas, paredes médias, preenchimento leve." },
-  { id: "mecanica", label: "Mecânica/Funcional", desc: "Paredes grossas, preenchimento denso, sem detalhe fino." },
-  { id: "miniatura", label: "Miniatura/Detalhe fino", desc: "Camadas ultra finas, tree organic, velocidade lenta." },
-  { id: "prototipo", label: "Protótipo rápido", desc: "Camadas grossas, poucas paredes, alta velocidade." },
-  { id: "flexivel", label: "Peça flexível", desc: "TPU, velocidades reduzidas, preenchimento gyroid leve." },
+  {
+    id: "decoracao",
+    label: "Decoração/Display",
+    desc: "Camadas finas, paredes médias, preenchimento leve.",
+  },
+  {
+    id: "mecanica",
+    label: "Mecânica/Funcional",
+    desc: "Paredes grossas, preenchimento denso, sem detalhe fino.",
+  },
+  {
+    id: "miniatura",
+    label: "Miniatura/Detalhe fino",
+    desc: "Camadas ultra finas, tree organic, velocidade lenta.",
+  },
+  {
+    id: "prototipo",
+    label: "Protótipo rápido",
+    desc: "Camadas grossas, poucas paredes, alta velocidade.",
+  },
+  {
+    id: "flexivel",
+    label: "Peça flexível",
+    desc: "TPU, velocidades reduzidas, preenchimento gyroid leve.",
+  },
 ];
 
-const BED_TYPES = ["Textured PEI Plate", "Smooth PEI Plate", "Cool Plate", "Engineering Plate", "High Temp Plate"];
+const BED_TYPES = [
+  "Textured PEI Plate",
+  "Smooth PEI Plate",
+  "Cool Plate",
+  "Engineering Plate",
+  "High Temp Plate",
+];
 
 function initialState(): WizardState {
   return {
@@ -69,6 +137,7 @@ function initialState(): WizardState {
     supportMode: "auto",
     bed: "Textured PEI Plate",
     ironing: { type: undefined, flow: "10%", spacing: "0.1", speed: "20" },
+    specialOverrides: [],
   };
 }
 
@@ -82,12 +151,15 @@ export function Wizard() {
     try {
       const lastId = localStorage.getItem(LS_LAST_PRINTER);
       const list = loadPrinters();
-      const def = list.find((p) => p.id === lastId)
-        ?? list.find((p) => p.id === "Bambu Lab A1 0.4 nozzle")
-        ?? list[0]
-        ?? null;
+      const def =
+        list.find((p) => p.id === lastId) ??
+        list.find((p) => p.id === "Bambu Lab A1 0.4 nozzle") ??
+        list[0] ??
+        null;
       s.printer = def;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return s;
   });
   const [syncing, setSyncing] = useState(false);
@@ -100,10 +172,13 @@ export function Wizard() {
   // Persist last selected printer
   useEffect(() => {
     if (state.printer?.id) {
-      try { localStorage.setItem(LS_LAST_PRINTER, state.printer.id); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(LS_LAST_PRINTER, state.printer.id);
+      } catch {
+        /* ignore */
+      }
     }
   }, [state.printer?.id]);
-
 
   const chosenOri = useMemo(
     () => state.orientations.find((o) => o.key === state.chosenOrientationKey) ?? null,
@@ -117,17 +192,20 @@ export function Wizard() {
     return x <= bx && y <= by && z <= bz;
   }, [state.mesh, state.printer]);
 
-  const handleFile = useCallback(async (file: File) => {
-    try {
-      const mesh = await parseSTL(file);
-      if (mesh.triCount === 0) throw new Error("Nenhum triângulo encontrado no STL.");
-      patch({ mesh, analysis: null, orientations: [] });
-      toast.success(`STL carregado: ${mesh.triCount.toLocaleString()} triângulos`);
-      setStep(2);
-    } catch (e) {
-      toast.error(`Falha ao ler STL: ${(e as Error).message}`);
-    }
-  }, [patch]);
+  const handleFile = useCallback(
+    async (file: File) => {
+      try {
+        const mesh = await parseSTL(file);
+        if (mesh.triCount === 0) throw new Error("Nenhum triângulo encontrado no STL.");
+        patch({ mesh, analysis: null, orientations: [] });
+        toast.success(`STL carregado: ${mesh.triCount.toLocaleString()} triângulos`);
+        setStep(2);
+      } catch (e) {
+        toast.error(`Falha ao ler STL: ${(e as Error).message}`);
+      }
+    },
+    [patch],
+  );
 
   // Silent sync — never blocks the UI, never surfaces errors.
   const runSilentSync = useCallback(async () => {
@@ -161,6 +239,14 @@ export function Wizard() {
     if (!stillValid) patch({ material: null });
   }, [materialsForPrinter, state.material, state.printer, patch]);
 
+  // Nylon/PA: sugerir Engineering Plate por padrão (editável no Avançado).
+  useEffect(() => {
+    if (isNylonFamily(state.material) && state.bed === "Textured PEI Plate") {
+      patch({ bed: "Engineering Plate" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.material?.id]);
+
   const runAnalysis = useCallback(async () => {
     if (!state.mesh || !state.printer) return;
     setAnalyzing(true);
@@ -173,7 +259,11 @@ export function Wizard() {
       let a = chosen.analysis;
       // Refine type by purpose preference
       if (a.needsSupport && purposeToTreePreference(state.purpose) && a.suggestedType !== "tree") {
-        a = { ...a, suggestedType: "tree", reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)" };
+        a = {
+          ...a,
+          suggestedType: "tree",
+          reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)",
+        };
       }
       patch({ orientations, chosenOrientationKey: chosen.key, analysis: a });
       toast.success("Análise concluída");
@@ -249,7 +339,9 @@ export function Wizard() {
       // Persist original STL bytes for reuse from history
       try {
         await putStl(id, mesh.sourceBuffer ?? new ArrayBuffer(0));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       saveHistory(entry);
       setHistory(loadHistory());
       toast.success(".3mf + relatório gerados");
@@ -271,12 +363,19 @@ export function Wizard() {
       setValidation(rep);
     } catch (e) {
       setValidation({
-        ok: false, needsSync: false, keyCount: 0,
+        ok: false,
+        needsSync: false,
+        keyCount: 0,
         dssSlots: { process: [], filament: [], printer: [], length: 0 },
-        plateOk: false, plateInfo: null,
-        modelMetadataOk: false, modelSettingsOk: false, sliceInfoOk: false,
-        processLeaf: null, filamentLeaf: null,
-        errors: [(e as Error).message], warnings: [],
+        plateOk: false,
+        plateInfo: null,
+        modelMetadataOk: false,
+        modelSettingsOk: false,
+        sliceInfoOk: false,
+        processLeaf: null,
+        filamentLeaf: null,
+        errors: [(e as Error).message],
+        warnings: [],
       });
     } finally {
       setValidating(false);
@@ -289,24 +388,29 @@ export function Wizard() {
     runValidation();
   }, [step, runValidation]);
 
-
-
-
   const canNext = useMemo(() => {
     switch (step) {
-      case 1: return !!state.mesh;
-      case 2: return !!state.printer;
-      case 3: return !!state.material && /^#[0-9A-Fa-f]{6}$/.test(state.color);
-      case 4: return !!state.purpose;
-      case 5: return !!state.analysis;
-      case 6: return true;
-      default: return true;
+      case 1:
+        return !!state.mesh;
+      case 2:
+        return !!state.printer;
+      case 3:
+        return !!state.material && /^#[0-9A-Fa-f]{6}$/.test(state.color);
+      case 4:
+        return !!state.purpose;
+      case 5:
+        return !!state.analysis;
+      case 6:
+        return true;
+      default:
+        return true;
     }
   }, [step, state]);
 
   const progress = (step / STEPS.length) * 100;
 
-  const openWarning = state.printer && state.material?.open && OPEN_PRINTERS.has(state.printer.printerModel);
+  const openWarning =
+    state.printer && state.material?.open && OPEN_PRINTERS.has(state.printer.printerModel);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -322,7 +426,9 @@ export function Wizard() {
           <div className="flex items-center gap-2">
             {syncedAt && (
               <span className="text-xs text-muted-foreground hidden sm:inline">
-                {syncing ? "Sincronizando…" : `Atualizado ${new Date(syncedAt).toLocaleString("pt-BR")}`}
+                {syncing
+                  ? "Sincronizando…"
+                  : `Atualizado ${new Date(syncedAt).toLocaleString("pt-BR")}`}
               </span>
             )}
           </div>
@@ -332,7 +438,9 @@ export function Wizard() {
       <div className="max-w-[720px] mx-auto px-4 py-6 space-y-6">
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">Etapa {step} de {STEPS.length}: {STEPS[step - 1].label}</span>
+            <span className="font-medium">
+              Etapa {step} de {STEPS.length}: {STEPS[step - 1].label}
+            </span>
             <span className="text-muted-foreground">{Math.round(progress)}%</span>
           </div>
           <Progress value={progress} />
@@ -346,7 +454,11 @@ export function Wizard() {
                   key={s.id}
                   onClick={() => (s.id === 1 || state.mesh) && setStep(s.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs whitespace-nowrap transition-colors ${
-                    active ? "bg-primary text-primary-foreground" : done ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50"
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : done
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-muted/50"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" /> {s.label}
@@ -360,12 +472,7 @@ export function Wizard() {
           <div className="space-y-4">
             {step === 1 && <StepFile onFile={handleFile} mesh={state.mesh} />}
             {step === 2 && (
-              <StepPrinter
-                printers={printers}
-                state={state}
-                bedFits={bedFits}
-                onChange={patch}
-              />
+              <StepPrinter printers={printers} state={state} bedFits={bedFits} onChange={patch} />
             )}
             {step === 3 && (
               <StepMaterial
@@ -400,13 +507,19 @@ export function Wizard() {
               />
             )}
 
-
             <div className="flex justify-between gap-2 pt-2">
-              <Button variant="outline" onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1}>
+              <Button
+                variant="outline"
+                onClick={() => setStep(Math.max(1, step - 1))}
+                disabled={step === 1}
+              >
                 Voltar
               </Button>
               {step < STEPS.length ? (
-                <Button onClick={() => setStep(Math.min(STEPS.length, step + 1))} disabled={!canNext}>
+                <Button
+                  onClick={() => setStep(Math.min(STEPS.length, step + 1))}
+                  disabled={!canNext}
+                >
                   Próxima
                 </Button>
               ) : (
@@ -424,7 +537,6 @@ export function Wizard() {
                 </Button>
               )}
             </div>
-
           </div>
 
           <div className="space-y-3">
@@ -434,7 +546,8 @@ export function Wizard() {
                   Preview 3D
                   {state.mesh && (
                     <span className="text-xs font-normal text-muted-foreground">
-                      {state.mesh.bbox.size[0].toFixed(1)} × {state.mesh.bbox.size[1].toFixed(1)} × {state.mesh.bbox.size[2].toFixed(1)} mm
+                      {state.mesh.bbox.size[0].toFixed(1)} × {state.mesh.bbox.size[1].toFixed(1)} ×{" "}
+                      {state.mesh.bbox.size[2].toFixed(1)} mm
                       {" · "}
                       {(state.mesh.volumeMm3 / 1000).toFixed(1)} cm³
                     </span>
@@ -461,62 +574,79 @@ export function Wizard() {
             </Card>
             {step >= 5 && <LegendChip analysis={state.analysis} />}
 
-            <HistoryCard history={history} onReuse={async (entry) => {
-              const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
-              let m: MaterialBase | null = null;
-              if (p) {
-                const list = listMaterialsForPrinter(p);
-                m = list.find((x) => x.id === entry.materialId)
-                  ?? (entry.materialId.includes("@BBL") ? buildMaterialFromName(entry.materialId, p.suffix) : null)
-                  ?? state.material;
-              }
-              let mesh: STLMesh | null = null;
-              try {
-                const buf = await getStl(entry.id);
-                if (buf) {
-                  const file = new File([buf], entry.fileName, { type: "model/stl" });
-                  mesh = await parseSTL(file);
+            <HistoryCard
+              history={history}
+              onReuse={async (entry) => {
+                const p = printers.find((x) => x.id === entry.printerId) ?? state.printer;
+                let m: MaterialBase | null = null;
+                if (p) {
+                  const list = listMaterialsForPrinter(p);
+                  m =
+                    list.find((x) => x.id === entry.materialId) ??
+                    (entry.materialId.includes("@BBL")
+                      ? buildMaterialFromName(entry.materialId, p.suffix)
+                      : null) ??
+                    state.material;
                 }
-              } catch { /* ignore */ }
-
-              const patchState: Partial<WizardState> = {
-                printer: p,
-                material: m,
-                purpose: entry.purpose,
-                color: entry.color,
-                supportMode: entry.supportMode as WizardState["supportMode"],
-                bed: entry.bed ?? state.bed,
-                centerOnBed: entry.centerOnBed ?? state.centerOnBed,
-                overrides: entry.overrides ?? {},
-                ironing: entry.ironing ?? state.ironing,
-                chosenOrientationKey: entry.chosenOrientationKey ?? "original",
-              };
-              if (mesh) {
-                patchState.mesh = mesh;
-                patchState.analysis = null;
-                patchState.orientations = [];
-              }
-              patch(patchState);
-
-              if (mesh && p && m) {
+                let mesh: STLMesh | null = null;
                 try {
-                  const orientations = analyzeAllOrientations(mesh, m, p.bed);
-                  const key = entry.chosenOrientationKey ?? "original";
-                  const chosen = orientations.find((o) => o.key === key) ?? orientations[0];
-                  let a = chosen.analysis;
-                  if (a.needsSupport && purposeToTreePreference(entry.purpose) && a.suggestedType !== "tree") {
-                    a = { ...a, suggestedType: "tree", reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)" };
+                  const buf = await getStl(entry.id);
+                  if (buf) {
+                    const file = new File([buf], entry.fileName, { type: "model/stl" });
+                    mesh = await parseSTL(file);
                   }
-                  patch({ orientations, chosenOrientationKey: chosen.key, analysis: a });
-                } catch { /* ignore */ }
-                setStep(7);
-                toast.success("Histórico restaurado — pronto para gerar");
-              } else {
-                toast.warning("Modelo não encontrado, faça upload novamente");
-                setStep(1);
-              }
-            }} />
+                } catch {
+                  /* ignore */
+                }
 
+                const patchState: Partial<WizardState> = {
+                  printer: p,
+                  material: m,
+                  purpose: entry.purpose,
+                  color: entry.color,
+                  supportMode: entry.supportMode as WizardState["supportMode"],
+                  bed: entry.bed ?? state.bed,
+                  centerOnBed: entry.centerOnBed ?? state.centerOnBed,
+                  overrides: entry.overrides ?? {},
+                  ironing: entry.ironing ?? state.ironing,
+                  chosenOrientationKey: entry.chosenOrientationKey ?? "original",
+                };
+                if (mesh) {
+                  patchState.mesh = mesh;
+                  patchState.analysis = null;
+                  patchState.orientations = [];
+                }
+                patch(patchState);
+
+                if (mesh && p && m) {
+                  try {
+                    const orientations = analyzeAllOrientations(mesh, m, p.bed);
+                    const key = entry.chosenOrientationKey ?? "original";
+                    const chosen = orientations.find((o) => o.key === key) ?? orientations[0];
+                    let a = chosen.analysis;
+                    if (
+                      a.needsSupport &&
+                      purposeToTreePreference(entry.purpose) &&
+                      a.suggestedType !== "tree"
+                    ) {
+                      a = {
+                        ...a,
+                        suggestedType: "tree",
+                        reason: a.reason + " (Ajuste: finalidade Miniatura → TREE.)",
+                      };
+                    }
+                    patch({ orientations, chosenOrientationKey: chosen.key, analysis: a });
+                  } catch {
+                    /* ignore */
+                  }
+                  setStep(7);
+                  toast.success("Histórico restaurado — pronto para gerar");
+                } else {
+                  toast.warning("Modelo não encontrado, faça upload novamente");
+                  setStep(1);
+                }
+              }}
+            />
           </div>
         </div>
       </div>
@@ -534,15 +664,23 @@ function StepFile({ onFile, mesh }: { onFile: (f: File) => void; mesh: STLMesh |
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Upload className="w-4 h-4" /> Enviar STL</CardTitle>
-        <CardDescription>Aceita STL binário e ASCII. Processamento 100% no navegador.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Upload className="w-4 h-4" /> Enviar STL
+        </CardTitle>
+        <CardDescription>
+          Aceita STL binário e ASCII. Processamento 100% no navegador.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <label
-          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => {
-            e.preventDefault(); setDrag(false);
+            e.preventDefault();
+            setDrag(false);
             const f = e.dataTransfer.files?.[0];
             if (f) onFile(f);
           }}
@@ -562,10 +700,19 @@ function StepFile({ onFile, mesh }: { onFile: (f: File) => void; mesh: STLMesh |
         </label>
         {mesh && (
           <div className="mt-4 text-sm space-y-1">
-            <div><strong>Arquivo:</strong> {mesh.fileName}</div>
-            <div><strong>Triângulos:</strong> {mesh.triCount.toLocaleString("pt-BR")}</div>
-            <div><strong>Volume aproximado:</strong> {(mesh.volumeMm3 / 1000).toFixed(2)} cm³</div>
-            <div><strong>Bounding box:</strong> {mesh.bbox.size.map((v) => v.toFixed(1)).join(" × ")} mm</div>
+            <div>
+              <strong>Arquivo:</strong> {mesh.fileName}
+            </div>
+            <div>
+              <strong>Triângulos:</strong> {mesh.triCount.toLocaleString("pt-BR")}
+            </div>
+            <div>
+              <strong>Volume aproximado:</strong> {(mesh.volumeMm3 / 1000).toFixed(2)} cm³
+            </div>
+            <div>
+              <strong>Bounding box:</strong> {mesh.bbox.size.map((v) => v.toFixed(1)).join(" × ")}{" "}
+              mm
+            </div>
           </div>
         )}
       </CardContent>
@@ -574,40 +721,121 @@ function StepFile({ onFile, mesh }: { onFile: (f: File) => void; mesh: STLMesh |
 }
 
 function StepPrinter({
-  printers, state, bedFits, onChange,
+  printers,
+  state,
+  bedFits,
+  onChange,
 }: {
-  printers: Printer[]; state: WizardState; bedFits: boolean;
+  printers: Printer[];
+  state: WizardState;
+  bedFits: boolean;
   onChange: (p: Partial<WizardState>) => void;
 }) {
+  const models = useMemo(() => {
+    const seen = new Set<string>();
+    return printers
+      .filter((p) => {
+        if (seen.has(p.printerModel)) return false;
+        seen.add(p.printerModel);
+        return true;
+      })
+      .map((p) => p.printerModel);
+  }, [printers]);
+  const currentModel = state.printer?.printerModel ?? models[0] ?? "";
+  const nozzles = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          printers.filter((p) => p.printerModel === currentModel).map((p) => p.printerVariant),
+        ),
+      ).sort((a, b) => parseFloat(a) - parseFloat(b)),
+    [printers, currentModel],
+  );
+  const currentNozzle = state.printer?.printerVariant ?? "0.4";
+
+  const onModel = (model: string) => {
+    const list = printers.filter((p) => p.printerModel === model);
+    const preferred =
+      list.find((p) => p.printerVariant === currentNozzle) ??
+      list.find((p) => p.printerVariant === "0.4") ??
+      list[0];
+    if (preferred) onChange({ printer: preferred });
+  };
+  const onNozzle = (nz: string) => {
+    const p = printers.find((x) => x.printerModel === currentModel && x.printerVariant === nz);
+    if (p) onChange({ printer: p });
+  };
+
+  const nozzleTip =
+    currentNozzle === "0.2"
+      ? "Bico 0.2 — detalhe altíssimo, mas MUITO lento e mais frágil (entope fácil)."
+      : currentNozzle === "0.6"
+        ? "Bico 0.6 — imprime rápido e forte, mas perde detalhes finos."
+        : currentNozzle === "0.8"
+          ? "Bico 0.8 — foco em peças grandes/estruturais; camadas 0.28–0.6mm. Sem detalhe fino."
+          : null;
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><PrinterIcon className="w-4 h-4" /> Impressora</CardTitle>
-        <CardDescription>Catálogo local + sincronização com o GitHub da Bambulab.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <PrinterIcon className="w-4 h-4" /> Impressora
+        </CardTitle>
+        <CardDescription>
+          Escolha o modelo e o bico. O catálogo é sincronizado do GitHub da Bambulab.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>Modelo</Label>
-          <Select
-            value={state.printer?.id ?? ""}
-            onValueChange={(id) => onChange({ printer: printers.find((p) => p.id === id) ?? null })}
-          >
-            <SelectTrigger><SelectValue placeholder="Selecione a impressora" /></SelectTrigger>
-            <SelectContent>
-              {printers.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.displayName} · {p.bed[0]}×{p.bed[1]}×{p.bed[2]} mm
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Modelo</Label>
+            <Select value={currentModel} onValueChange={onModel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o modelo" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Bico (nozzle)</Label>
+            <Select value={currentNozzle} onValueChange={onNozzle}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {nozzles.map((n) => (
+                  <SelectItem key={n} value={n}>
+                    {n} mm{n === "0.4" ? " · padrão" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        {nozzleTip && (
+          <Alert>
+            <Info className="w-4 h-4" />
+            <AlertDescription className="text-xs">{nozzleTip}</AlertDescription>
+          </Alert>
+        )}
         <div className="space-y-2">
           <Label>Placa (curr_bed_type)</Label>
           <Select value={state.bed} onValueChange={(v) => onChange({ bed: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
-              {BED_TYPES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+              {BED_TYPES.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {b}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -617,12 +845,15 @@ function StepPrinter({
             checked={state.centerOnBed}
             onCheckedChange={(v) => onChange({ centerOnBed: !!v })}
           />
-          <Label htmlFor="center" className="cursor-pointer">Centralizar no leito e apoiar no Z=0</Label>
+          <Label htmlFor="center" className="cursor-pointer">
+            Centralizar no leito e apoiar no Z=0
+          </Label>
         </div>
         {state.mesh && state.printer && (
           <>
             <div className="text-sm text-muted-foreground">
-              Peça: {state.mesh.bbox.size.map((v) => v.toFixed(1)).join(" × ")} mm · Volume: {state.printer.bed.join(" × ")} mm
+              Peça: {state.mesh.bbox.size.map((v) => v.toFixed(1)).join(" × ")} mm · Volume:{" "}
+              {state.printer.bed.join(" × ")} mm
             </div>
             {!bedFits && (
               <Alert variant="destructive">
@@ -639,7 +870,10 @@ function StepPrinter({
 }
 
 function StepMaterial({
-  state, materials, openWarning, onChange,
+  state,
+  materials,
+  openWarning,
+  onChange,
 }: {
   state: WizardState;
   materials: MaterialBase[];
@@ -650,7 +884,9 @@ function StepMaterial({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Palette className="w-4 h-4" /> Material e cor</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Palette className="w-4 h-4" /> Material e cor
+        </CardTitle>
         <CardDescription>
           {empty
             ? "Sincronizando catálogo…"
@@ -662,14 +898,21 @@ function StepMaterial({
           <Label>Material</Label>
           <Select
             value={state.material?.id ?? ""}
-            onValueChange={(id) => onChange({ material: materials.find((m) => m.id === id) ?? null })}
+            onValueChange={(id) =>
+              onChange({ material: materials.find((m) => m.id === id) ?? null })
+            }
             disabled={empty}
           >
-            <SelectTrigger><SelectValue placeholder={empty ? "Aguardando sincronização…" : "Selecione o material"} /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue
+                placeholder={empty ? "Aguardando sincronização…" : "Selecione o material"}
+              />
+            </SelectTrigger>
             <SelectContent>
               {materials.map((m) => (
                 <SelectItem key={m.id} value={m.id}>
-                  {m.label}{m.highFlow ? " · HF" : ""}
+                  {m.label}
+                  {m.highFlow ? " · HF" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -692,13 +935,59 @@ function StepMaterial({
             />
           </div>
         </div>
-        {state.material && (
+        {state.material && !isNylonFamily(state.material) && (
           <div className="text-xs text-muted-foreground space-y-1">
-            <div>Bico {state.material.nozzle}°C · Mesa {state.material.bed}°C · Vol. máx {state.material.volSpeed} mm³/s</div>
-            <div>Retração {state.material.retraction}mm · Fan {state.material.fanMin}–{state.material.fanMax}% (0 na 1ª camada)</div>
+            <div>
+              Bico {state.material.nozzle}°C · Mesa {state.material.bed}°C · Vol. máx{" "}
+              {state.material.volSpeed} mm³/s
+            </div>
+            <div>
+              Retração {state.material.retraction}mm · Fan {state.material.fanMin}–
+              {state.material.fanMax}% (0 na 1ª camada)
+            </div>
           </div>
         )}
-        {openWarning && (
+        {state.material && isNylonFamily(state.material) && (
+          <div className="text-xs text-muted-foreground">
+            Temperaturas, vazão e ventilador seguem o preset oficial da Bambu — não sobrescrevemos
+            PA/Nylon.
+          </div>
+        )}
+        {isNylonFamily(state.material) && isOpenPrinter(state.printer) && (
+          <Alert variant="destructive">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertTitle>Nylon em impressora aberta é arriscado</AlertTitle>
+            <AlertDescription className="text-xs">
+              {state.printer?.printerModel} é frame ABERTO. Nylon empena e delamina sem câmara
+              aquecida — o recomendado é P1S, X1C ou H2D. Se for imprimir mesmo assim, use brim
+              largo, câmara improvisada e feche janelas.
+            </AlertDescription>
+          </Alert>
+        )}
+        {isNylonFamily(state.material) && (
+          <Alert>
+            <Info className="w-4 h-4" />
+            <AlertTitle className="text-sm">Nylon / PA — checklist obrigatório</AlertTitle>
+            <AlertDescription className="text-xs space-y-1">
+              <div>
+                • <strong>Secar</strong> 8–12 h a 70–80 °C antes de imprimir. Use{" "}
+                <strong>dry box</strong> durante toda a impressão (higroscópico).
+              </div>
+              <div>
+                • Placa recomendada: <strong>Engineering Plate</strong> (aplicada por padrão;
+                editável no Avançado).
+              </div>
+              {isAbrasive(state.material) && (
+                <div>
+                  • Material <strong>abrasivo</strong> (CF/GF): exige{" "}
+                  <strong>bico endurecido</strong> (hardened steel). Bico de latão desgasta em
+                  horas.
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+        {openWarning && !isNylonFamily(state.material) && (
           <Alert variant="destructive">
             <AlertTriangle className="w-4 h-4" />
             <AlertTitle>Cuidado com material técnico em impressora aberta</AlertTitle>
@@ -713,22 +1002,35 @@ function StepMaterial({
   );
 }
 
-function StepPurpose({ state, onChange }: { state: WizardState; onChange: (p: Partial<WizardState>) => void }) {
+function StepPurpose({
+  state,
+  onChange,
+}: {
+  state: WizardState;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Target className="w-4 h-4" /> Finalidade</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="w-4 h-4" /> Finalidade
+        </CardTitle>
         <CardDescription>Define camada, paredes, preenchimento e velocidade.</CardDescription>
       </CardHeader>
       <CardContent>
-        <RadioGroup value={state.purpose ?? ""} onValueChange={(v) => onChange({ purpose: v as Purpose })}>
+        <RadioGroup
+          value={state.purpose ?? ""}
+          onValueChange={(v) => onChange({ purpose: v as Purpose })}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {PURPOSES.map((p) => (
               <label
                 key={p.id}
                 htmlFor={p.id}
                 className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  state.purpose === p.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  state.purpose === p.id
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
                 }`}
               >
                 <RadioGroupItem value={p.id} id={p.id} className="mt-1" />
@@ -746,23 +1048,34 @@ function StepPurpose({ state, onChange }: { state: WizardState; onChange: (p: Pa
 }
 
 function StepAnalysis({
-  state, analyzing, onRerun, onChange,
+  state,
+  analyzing,
+  onRerun,
+  onChange,
 }: {
-  state: WizardState; analyzing: boolean; onRerun: () => void;
+  state: WizardState;
+  analyzing: boolean;
+  onRerun: () => void;
   onChange: (p: Partial<WizardState>) => void;
 }) {
   const a = state.analysis;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Scan className="w-4 h-4" /> Análise de suporte</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Scan className="w-4 h-4" /> Análise de suporte
+        </CardTitle>
         <CardDescription>Raycast por face + comparação de orientações.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {analyzing && <div className="text-sm text-muted-foreground">Analisando 6 orientações...</div>}
+        {analyzing && (
+          <div className="text-sm text-muted-foreground">Analisando 6 orientações...</div>
+        )}
         {!analyzing && a && (
           <>
-            <div className={`rounded-lg p-3 border ${a.needsSupport ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/40"}`}>
+            <div
+              className={`rounded-lg p-3 border ${a.needsSupport ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/40"}`}
+            >
               <div className="flex items-center gap-2 mb-1">
                 <Badge variant={a.needsSupport ? "destructive" : "secondary"}>
                   Suporte: {a.needsSupport ? "LIGADO" : "DESLIGADO"}
@@ -790,7 +1103,11 @@ function StepAnalysis({
                   >
                     <span className="flex items-center gap-2">
                       {o.label}
-                      {!o.fits && <Badge variant="destructive" className="text-[10px]">não cabe</Badge>}
+                      {!o.fits && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          não cabe
+                        </Badge>
+                      )}
                     </span>
                     <span className="text-xs text-muted-foreground font-mono">
                       {(o.analysis.supportPct * 100).toFixed(1)}% · h {o.heightMm.toFixed(0)}mm
@@ -799,7 +1116,8 @@ function StepAnalysis({
                 ))}
               </div>
               <Button
-                variant="outline" size="sm"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   const best = pickBestOrientation(state.orientations);
                   onChange({ chosenOrientationKey: best.key, analysis: best.analysis });
@@ -812,7 +1130,10 @@ function StepAnalysis({
             <Separator />
             <div className="space-y-2">
               <Label>Sobrescrever</Label>
-              <Tabs value={state.supportMode} onValueChange={(v) => onChange({ supportMode: v as WizardState["supportMode"] })}>
+              <Tabs
+                value={state.supportMode}
+                onValueChange={(v) => onChange({ supportMode: v as WizardState["supportMode"] })}
+              >
                 <TabsList className="grid grid-cols-4">
                   <TabsTrigger value="auto">Auto</TabsTrigger>
                   <TabsTrigger value="normal">Normal</TabsTrigger>
@@ -822,16 +1143,19 @@ function StepAnalysis({
               </Tabs>
             </div>
 
-            {a.needsSupport && state.material && ["PLA", "PETG"].includes(state.material.filamentType) && (
-              <Alert>
-                <AlertTriangle className="w-4 h-4" />
-                <AlertDescription className="text-xs">
-                  Suporte em {state.material.filamentType} tende a soldar. A folga de topo foi ajustada
-                  ({state.material.filamentType === "PETG" ? "0.25" : "0.20"}mm) para descolar.
-                  Para pontos específicos, use <em>Support Painting</em> no Bambu Studio.
-                </AlertDescription>
-              </Alert>
-            )}
+            {a.needsSupport &&
+              state.material &&
+              ["PLA", "PETG"].includes(state.material.filamentType) && (
+                <Alert>
+                  <AlertTriangle className="w-4 h-4" />
+                  <AlertDescription className="text-xs">
+                    Suporte em {state.material.filamentType} tende a soldar. A folga de topo foi
+                    ajustada ({state.material.filamentType === "PETG" ? "0.25" : "0.20"}mm) para
+                    descolar. Para pontos específicos, use <em>Support Painting</em> no Bambu
+                    Studio.
+                  </AlertDescription>
+                </Alert>
+              )}
 
             <Button variant="ghost" size="sm" onClick={onRerun}>
               <RefreshCw className="w-3 h-3 mr-2" /> Reanalizar
@@ -843,20 +1167,31 @@ function StepAnalysis({
   );
 }
 
-function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: Partial<WizardState>) => void }) {
+function StepAdvanced({
+  state,
+  onChange,
+}: {
+  state: WizardState;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
   const setOv = (k: string, v: string | undefined) =>
     onChange({ overrides: { ...state.overrides, [k]: v } });
 
   const setIron = (patch: Partial<WizardState["ironing"]>) =>
     onChange({ ironing: { ...state.ironing, ...patch } });
 
-  const effectiveType = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
+  const effectiveType =
+    state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Sliders className="w-4 h-4" /> Avançado</CardTitle>
-        <CardDescription>Overrides opcionais. Deixe em branco para usar os padrões do motor.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Sliders className="w-4 h-4" /> Avançado
+        </CardTitle>
+        <CardDescription>
+          Overrides opcionais. Deixe em branco para usar os padrões do motor.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Collapsible defaultOpen>
@@ -885,7 +1220,10 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 
         <Collapsible defaultOpen={state.purpose === "decoracao"}>
           <CollapsibleTrigger className="text-sm font-medium">
-            Ironing (alisar topo){state.purpose === "decoracao" && <span className="ml-2 text-xs text-primary">recomendado</span>}
+            Ironing (alisar topo)
+            {state.purpose === "decoracao" && (
+              <span className="ml-2 text-xs text-primary">recomendado</span>
+            )}
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3 pt-3">
             <div className="space-y-1">
@@ -894,7 +1232,9 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
                 value={effectiveType}
                 onValueChange={(v) => setIron({ type: v as WizardState["ironing"]["type"] })}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="no ironing">Desligado</SelectItem>
                   <SelectItem value="top">Top (todas as superfícies de topo)</SelectItem>
@@ -903,34 +1243,48 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                Alisa superfícies planas de topo, removendo linhas de camada. Ideal para peças de display.
+                Alisa superfícies planas de topo, removendo linhas de camada. Ideal para peças de
+                display.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Fluxo</Label>
-                <Input value={state.ironing.flow} onChange={(e) => setIron({ flow: e.target.value })} />
+                <Input
+                  value={state.ironing.flow}
+                  onChange={(e) => setIron({ flow: e.target.value })}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Spacing (mm)</Label>
-                <Input value={state.ironing.spacing} onChange={(e) => setIron({ spacing: e.target.value })} />
+                <Input
+                  value={state.ironing.spacing}
+                  onChange={(e) => setIron({ spacing: e.target.value })}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Velocidade</Label>
-                <Input value={state.ironing.speed} onChange={(e) => setIron({ speed: e.target.value })} />
+                <Input
+                  value={state.ironing.speed}
+                  onChange={(e) => setIron({ speed: e.target.value })}
+                />
               </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
+
+        <Separator />
+
+        <SpecialSettingsBlock state={state} onChange={onChange} />
 
         {state.purpose === "decoracao" && (
           <Alert>
             <AlertTriangle className="w-4 h-4" />
             <AlertTitle className="text-sm">Variable Layer Height é passo manual</AlertTitle>
             <AlertDescription className="text-xs">
-              O perfil "Adaptive" depende da geometria e não é embarcado no .3mf.
-              O relatório <code>_LEIA-ME.txt</code> gerado junto explica como
-              aplicar em 30 segundos no Bambu Studio.
+              O perfil "Adaptive" depende da geometria e não é embarcado no .3mf. O relatório{" "}
+              <code>_LEIA-ME.txt</code> gerado junto explica como aplicar em 30 segundos no Bambu
+              Studio.
             </AlertDescription>
           </Alert>
         )}
@@ -940,8 +1294,16 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
 }
 
 function StepGenerate({
-  state, generating, genError, lastResult, onGenerate,
-  validation, validating, onRevalidate, onSync, syncing,
+  state,
+  generating,
+  genError,
+  lastResult,
+  onGenerate,
+  validation,
+  validating,
+  onRevalidate,
+  onSync,
+  syncing,
 }: {
   state: WizardState;
   generating: boolean;
@@ -960,22 +1322,38 @@ function StepGenerate({
   onSync: () => void;
   syncing: boolean;
 }) {
-  const effectiveIroning = state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
+  const effectiveIroning =
+    state.ironing.type ?? (state.purpose === "decoracao" ? "top" : "no ironing");
   const canGenerate = !!validation?.ok && !generating && !validating;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Download className="w-4 h-4" /> Revisar e gerar</CardTitle>
-        <CardDescription>Confira as validações antes de baixar o .3mf. Só liberamos o download se tudo estiver íntegro.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Download className="w-4 h-4" /> Revisar e gerar
+        </CardTitle>
+        <CardDescription>
+          Confira as validações antes de baixar o .3mf. Só liberamos o download se tudo estiver
+          íntegro.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="text-sm space-y-1">
-          <div><strong>Impressora:</strong> {state.printer?.displayName ?? "—"}</div>
-          <div><strong>Material:</strong> {state.material?.label ?? "—"} · {state.color}</div>
-          <div><strong>Finalidade:</strong> {state.purpose ?? "—"}</div>
-          <div><strong>Suporte:</strong> {state.supportMode}</div>
-          <div><strong>Ironing:</strong> {effectiveIroning}</div>
+          <div>
+            <strong>Impressora:</strong> {state.printer?.displayName ?? "—"}
+          </div>
+          <div>
+            <strong>Material:</strong> {state.material?.label ?? "—"} · {state.color}
+          </div>
+          <div>
+            <strong>Finalidade:</strong> {state.purpose ?? "—"}
+          </div>
+          <div>
+            <strong>Suporte:</strong> {state.supportMode}
+          </div>
+          <div>
+            <strong>Ironing:</strong> {effectiveIroning}
+          </div>
         </div>
 
         <ValidationSummary
@@ -993,11 +1371,12 @@ function StepGenerate({
           </Button>
           {!canGenerate && !validating && (
             <span className="text-xs text-muted-foreground self-center">
-              {validation?.errors.length ? "Corrija os itens acima para liberar o download." : "Aguardando validação..."}
+              {validation?.errors.length
+                ? "Corrija os itens acima para liberar o download."
+                : "Aguardando validação..."}
             </span>
           )}
         </div>
-
 
         {genError && (
           <Alert variant="destructive">
@@ -1034,7 +1413,8 @@ function StepGenerate({
               </Button>
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Arquivos: <span className="font-mono">{lastResult.fileName}</span> · <span className="font-mono">{lastResult.reportFileName}</span>
+              Arquivos: <span className="font-mono">{lastResult.fileName}</span> ·{" "}
+              <span className="font-mono">{lastResult.reportFileName}</span>
             </div>
             <ScrollArea className="h-40 w-full rounded border border-border p-2">
               <pre className="text-xs whitespace-pre-wrap font-mono">{lastResult.summary}</pre>
@@ -1046,13 +1426,20 @@ function StepGenerate({
   );
 }
 
-
-function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (h: HistoryEntry) => void }) {
+function HistoryCard({
+  history,
+  onReuse,
+}: {
+  history: HistoryEntry[];
+  onReuse: (h: HistoryEntry) => void;
+}) {
   if (history.length === 0) return null;
   return (
     <Card>
       <CardHeader className="py-3">
-        <CardTitle className="text-sm flex items-center gap-2"><HistoryIcon className="w-4 h-4" /> Histórico</CardTitle>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <HistoryIcon className="w-4 h-4" /> Histórico
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-40">
@@ -1064,7 +1451,10 @@ function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (
                 className="w-full text-left text-xs p-2 rounded hover:bg-muted flex items-center justify-between gap-2"
               >
                 <span className="truncate">
-                  <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: h.color }} />
+                  <span
+                    className="inline-block w-2 h-2 rounded-full mr-2"
+                    style={{ background: h.color }}
+                  />
                   {h.outputFileName ?? h.fileName} · {h.materialId} · {h.purpose}
                 </span>
                 <span className="text-muted-foreground shrink-0">
@@ -1080,7 +1470,11 @@ function HistoryCard({ history, onReuse }: { history: HistoryEntry[]; onReuse: (
 }
 
 function ValidationSummary({
-  report, loading, onRevalidate, onSync, syncing,
+  report,
+  loading,
+  onRevalidate,
+  onSync,
+  syncing,
 }: {
   report: ValidationReport | null;
   loading: boolean;
@@ -1103,8 +1497,11 @@ function ValidationSummary({
 
   const Item = ({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) => (
     <li className="flex items-start gap-2 text-sm">
-      {ok ? <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          : <XCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
+      {ok ? (
+        <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+      ) : (
+        <XCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+      )}
       <div className="min-w-0">
         <div className="font-medium">{label}</div>
         {detail && <div className="text-xs text-muted-foreground break-words">{detail}</div>}
@@ -1113,12 +1510,20 @@ function ValidationSummary({
   );
 
   return (
-    <div className={`rounded-2xl border p-3 space-y-3 ${report.ok ? "border-primary/40 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`}>
+    <div
+      className={`rounded-2xl border p-3 space-y-3 ${report.ok ? "border-primary/40 bg-primary/5" : "border-destructive/40 bg-destructive/5"}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          {report.ok
-            ? <><CheckCircle2 className="w-4 h-4 text-primary" /> Tudo pronto para gerar</>
-            : <><AlertTriangle className="w-4 h-4 text-destructive" /> Validação encontrou problemas</>}
+          {report.ok ? (
+            <>
+              <CheckCircle2 className="w-4 h-4 text-primary" /> Tudo pronto para gerar
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="w-4 h-4 text-destructive" /> Validação encontrou problemas
+            </>
+          )}
         </div>
         <Button size="sm" variant="ghost" onClick={onRevalidate} disabled={loading}>
           <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
@@ -1144,7 +1549,11 @@ function ValidationSummary({
         <Item
           ok={report.plateOk}
           label="Metadata/plate_1.json íntegro"
-          detail={report.plateInfo ? `nozzle_diameter=${report.plateInfo.nozzle} · version=${report.plateInfo.version}` : "JSON ausente ou inválido."}
+          detail={
+            report.plateInfo
+              ? `nozzle_diameter=${report.plateInfo.nozzle} · version=${report.plateInfo.version}`
+              : "JSON ausente ou inválido."
+          }
         />
         <Item
           ok={report.modelMetadataOk}
@@ -1163,20 +1572,27 @@ function ValidationSummary({
         />
       </ul>
 
-      {(dssOk && (dss.process.length > 0 || dss.filament.length > 0)) && (
+      {dssOk && (dss.process.length > 0 || dss.filament.length > 0) && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            Ver chaves sobrescritas ({dss.process.length + dss.filament.length + dss.printer.length})
+            Ver chaves sobrescritas ({dss.process.length + dss.filament.length + dss.printer.length}
+            )
           </summary>
           <div className="mt-2 space-y-2 font-mono text-[11px]">
             {dss.process.length > 0 && (
-              <div><span className="text-muted-foreground">process:</span> {dss.process.join(", ")}</div>
+              <div>
+                <span className="text-muted-foreground">process:</span> {dss.process.join(", ")}
+              </div>
             )}
             {dss.filament.length > 0 && (
-              <div><span className="text-muted-foreground">filament:</span> {dss.filament.join(", ")}</div>
+              <div>
+                <span className="text-muted-foreground">filament:</span> {dss.filament.join(", ")}
+              </div>
             )}
             {dss.printer.length > 0 && (
-              <div><span className="text-muted-foreground">printer:</span> {dss.printer.join(", ")}</div>
+              <div>
+                <span className="text-muted-foreground">printer:</span> {dss.printer.join(", ")}
+              </div>
             )}
           </div>
         </details>
@@ -1186,7 +1602,9 @@ function ValidationSummary({
         <div className="text-xs text-muted-foreground flex items-start gap-2">
           <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <div className="space-y-1">
-            {report.warnings.map((w, i) => <div key={i}>{w}</div>)}
+            {report.warnings.map((w, i) => (
+              <div key={i}>{w}</div>
+            ))}
           </div>
         </div>
       )}
@@ -1197,7 +1615,9 @@ function ValidationSummary({
           <AlertTitle>Corrija antes de baixar</AlertTitle>
           <AlertDescription>
             <ul className="list-disc pl-5 space-y-1 text-xs">
-              {report.errors.map((e, i) => <li key={i}>{e}</li>)}
+              {report.errors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
             </ul>
             {report.needsSync && (
               <div className="mt-3">
@@ -1211,5 +1631,240 @@ function ValidationSummary({
         </Alert>
       )}
     </div>
+  );
+}
+
+// -------- Special settings (user-defined Bambu key overrides) --------
+
+// Small allowlist of "known" Bambu keys used to soft-validate the user's input.
+// We DON'T block — just warn — so future keys keep working.
+const KNOWN_BAMBU_KEYS = new Set<string>([
+  // process
+  "brim_type",
+  "brim_width",
+  "brim_object_gap",
+  "raft_layers",
+  "seam_position",
+  "seam_gap",
+  "wall_sequence",
+  "sparse_infill_pattern",
+  "top_shell_layers",
+  "bottom_shell_layers",
+  "top_surface_pattern",
+  "bottom_surface_pattern",
+  "wall_generator",
+  "wall_loops",
+  "infill_wall_overlap",
+  "sparse_infill_density",
+  "layer_height",
+  "initial_layer_print_height",
+  "outer_wall_speed",
+  "inner_wall_speed",
+  "sparse_infill_speed",
+  "internal_solid_infill_speed",
+  "top_surface_speed",
+  "travel_speed",
+  "initial_layer_speed",
+  "print_sequence",
+  "skirt_loops",
+  "enable_prime_tower",
+  "prime_tower_width",
+  "flush_multiplier",
+  "detect_thin_wall",
+  "detect_overhang_wall",
+  "reduce_infill_retraction",
+  "ironing_type",
+  "ironing_flow",
+  "ironing_spacing",
+  "ironing_speed",
+  // filament
+  "filament_type",
+  "filament_diameter",
+  "filament_flow_ratio",
+  "filament_max_volumetric_speed",
+  "filament_retraction_length",
+  "nozzle_temperature",
+  "nozzle_temperature_initial_layer",
+  "hot_plate_temp",
+  "hot_plate_temp_initial_layer",
+  "fan_min_speed",
+  "fan_max_speed",
+  "close_fan_the_first_x_layers",
+  "chamber_temperature",
+  "slow_down_layer_time",
+  "slow_down_min_speed",
+]);
+
+function SpecialSettingsBlock({
+  state,
+  onChange,
+}: {
+  state: WizardState;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
+  const [presets, setPresets] = useState<SpecialPreset[]>(() => loadSpecialPresets());
+  const [presetName, setPresetName] = useState("");
+
+  const items: SpecialOverride[] = state.specialOverrides ?? [];
+  const setItems = (next: SpecialOverride[]) => onChange({ specialOverrides: next });
+
+  const addRow = () => setItems([...items, { key: "", value: "" }]);
+  const removeRow = (i: number) => setItems(items.filter((_, idx) => idx !== i));
+  const patchRow = (i: number, patch: Partial<SpecialOverride>) =>
+    setItems(items.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+
+  const applyPreset = (id: string) => {
+    const p = presets.find((x) => x.id === id);
+    if (!p) return;
+    setItems(p.overrides.map((o) => ({ ...o })));
+    toast.success(`Preset "${p.name}" aplicado`);
+  };
+  const savePreset = () => {
+    const cleaned = items.filter((o) => o.key.trim());
+    if (cleaned.length === 0) {
+      toast.error("Adicione ao menos uma chave antes de salvar");
+      return;
+    }
+    const p = saveSpecialPreset(presetName || `Preset ${presets.length + 1}`, cleaned);
+    setPresets(loadSpecialPresets());
+    setPresetName("");
+    toast.success(`Preset "${p.name}" salvo`);
+  };
+  const removePreset = (id: string) => {
+    deleteSpecialPreset(id);
+    setPresets(loadSpecialPresets());
+  };
+
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="text-sm font-medium flex items-center gap-2">
+        Configurações especiais (avançado)
+        <Badge variant="outline" className="text-[10px]">
+          {items.length}
+        </Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-3 space-y-3">
+        <Alert>
+          <AlertTriangle className="w-4 h-4" />
+          <AlertDescription className="text-xs">
+            Estes valores <strong>sobrescrevem tudo</strong> (processo, filamento e overrides
+            normais). Use só se você conhece a chave Bambu que está mexendo. Ex.:{" "}
+            <code>brim_type</code>=<code>outer_only</code>,<code> seam_position</code>=
+            <code>back</code>.
+          </AlertDescription>
+        </Alert>
+
+        {presets.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs shrink-0">Aplicar preset especial</Label>
+            <Select onValueChange={applyPreset}>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="Escolher preset salvo…" />
+              </SelectTrigger>
+              <SelectContent>
+                {presets.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.overrides.length} chave(s)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {items.length === 0 && (
+            <div className="text-xs text-muted-foreground italic">Nenhuma chave definida.</div>
+          )}
+          {items.map((row, i) => {
+            const k = row.key.trim();
+            const unknown = k.length > 0 && !KNOWN_BAMBU_KEYS.has(k);
+            return (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <div className="space-y-1">
+                  <Input
+                    value={row.key}
+                    placeholder="chave (ex: brim_type)"
+                    onChange={(e) => patchRow(i, { key: e.target.value })}
+                    className={`font-mono text-xs ${unknown ? "border-yellow-500/60" : ""}`}
+                  />
+                  {unknown && (
+                    <div className="text-[10px] text-yellow-600 dark:text-yellow-400">
+                      Chave não reconhecida — será aplicada mesmo assim.
+                    </div>
+                  )}
+                </div>
+                <Input
+                  value={row.value}
+                  placeholder="valor (ex: outer_only)"
+                  onChange={(e) => patchRow(i, { value: e.target.value })}
+                  className="font-mono text-xs"
+                />
+                <Button size="sm" variant="ghost" onClick={() => removeRow(i)}>
+                  <XCircle className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })}
+          <Button size="sm" variant="outline" onClick={addRow}>
+            + Adicionar chave
+          </Button>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <Label className="text-xs">Salvar as chaves acima como preset</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              value={presetName}
+              placeholder="Nome do preset"
+              onChange={(e) => setPresetName(e.target.value)}
+              className="h-8"
+            />
+            <Button size="sm" onClick={savePreset}>
+              Salvar preset
+            </Button>
+          </div>
+
+          {presets.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <Label className="text-xs">Presets salvos</Label>
+              <div className="space-y-1">
+                {presets.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between text-xs bg-muted/40 rounded px-2 py-1"
+                  >
+                    <span className="truncate">
+                      {p.name} ·{" "}
+                      <span className="text-muted-foreground">{p.overrides.length} chave(s)</span>
+                    </span>
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => applyPreset(p.id)}
+                      >
+                        Aplicar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => removePreset(p.id)}
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
