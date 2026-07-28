@@ -1009,6 +1009,10 @@ function StepAdvanced({ state, onChange }: { state: WizardState; onChange: (p: P
           </CollapsibleContent>
         </Collapsible>
 
+        <Separator />
+
+        <SpecialSettingsBlock state={state} onChange={onChange} />
+
         {state.purpose === "decoracao" && (
           <Alert>
             <AlertTriangle className="w-4 h-4" />
