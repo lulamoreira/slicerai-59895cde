@@ -138,6 +138,7 @@ function initialState(): WizardState {
     bed: "Textured PEI Plate",
     ironing: { type: undefined, flow: "10%", spacing: "0.1", speed: "20" },
     specialOverrides: [],
+    filamentTemps: {},
   };
 }
 
