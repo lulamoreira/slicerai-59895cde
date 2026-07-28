@@ -81,27 +81,31 @@ function stripPrefixNozzle(name: string): string {
   return name.replace(/^Bambu Lab\s+/i, "").replace(/\s*\d\.\d\s*nozzle$/i, "").trim();
 }
 
-/** Candidate suffix codes for a machine name, from most literal to most abbreviated. */
-function suffixCandidates(machineName: string): string[] {
+/** Candidate suffix codes for a machine name, from most literal to most abbreviated.
+ *  When nozzle ≠ 0.4, includes the "<code> <nozzle> nozzle" variants used by non-default bicos. */
+function suffixCandidates(machineName: string, nozzle?: string): string[] {
   const core = stripPrefixNozzle(machineName);
-  const out = new Set<string>();
-  out.add(core);
-  // "A1 mini" → "A1M"; "P1 P" → "P1P".
-  out.add(core.replace(/\s+mini$/i, "M").replace(/\s+/g, ""));
-  // "X1 Carbon" → "X1C"; drop trailing words to single letter.
+  const noz = nozzle ?? extractNozzle(machineName);
+  const isDefault = noz === "0.4";
+  const bases = new Set<string>();
+  bases.add(core);
+  bases.add(core.replace(/\s+mini$/i, "M").replace(/\s+/g, ""));
   const words = core.split(/\s+/);
   if (words.length > 1) {
     const initials = words[0] + words.slice(1).map((w) => w[0]?.toUpperCase() ?? "").join("");
-    out.add(initials);
-    out.add(words[0]);
+    bases.add(initials);
+    bases.add(words[0]);
   }
-  // Handle "H2 D" style: also try the first word alone.
-  return Array.from(out).filter(Boolean);
+  const baseArr = Array.from(bases).filter(Boolean);
+  if (isDefault) return baseArr;
+  // For non-0.4 nozzles, presets add " <nozzle> nozzle" to the suffix.
+  const withNozzle = baseArr.map((b) => `${b} ${noz} nozzle`);
+  return [...withNozzle, ...baseArr];
 }
 
 /** Chooses the suffix whose "@BBL <code>" has the MOST filament entries. */
-function pickSuffix(machineName: string, filamentNames: string[]): string {
-  const cands = suffixCandidates(machineName);
+function pickSuffix(machineName: string, filamentNames: string[], nozzle?: string): string {
+  const cands = suffixCandidates(machineName, nozzle);
   let best = cands[0] ?? stripPrefixNozzle(machineName);
   let bestCount = -1;
   for (const c of cands) {
@@ -117,17 +121,14 @@ function pickSuffix(machineName: string, filamentNames: string[]): string {
 }
 
 function normalizeMachineEntries(index: MasterIndex): MasterEntry[] {
-  const seen = new Set<string>();
   const out: MasterEntry[] = [];
+  const seen = new Set<string>();
   for (const m of index.machine_list) {
     if (!m?.name) continue;
     if (/template/i.test(m.name)) continue;
     if (!/0\.\d+\s+nozzle$/i.test(m.name)) continue;
-    // Only expose 0.4 nozzle variants (one printer per model).
-    if (!/0\.4\s+nozzle$/i.test(m.name)) continue;
-    const display = stripPrefixNozzle(m.name);
-    if (seen.has(display)) continue;
-    seen.add(display);
+    if (seen.has(m.name)) continue;
+    seen.add(m.name);
     out.push(m);
   }
   return out;
@@ -140,7 +141,7 @@ function buildPrintersFromMaster(index: MasterIndex): Printer[] {
   for (const m of machines) {
     const displayName = stripPrefixNozzle(m.name);
     const variant = extractNozzle(m.name);
-    const suffix = pickSuffix(m.name, filamentNames);
+    const suffix = pickSuffix(m.name, filamentNames, variant);
     printers.push({
       id: m.name,
       displayName,
@@ -152,23 +153,47 @@ function buildPrintersFromMaster(index: MasterIndex): Printer[] {
       fromGithub: true,
     });
   }
-  // Sort alphabetically.
-  printers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  printers.sort((a, b) =>
+    a.displayName.localeCompare(b.displayName) || parseFloat(a.printerVariant) - parseFloat(b.printerVariant),
+  );
   return printers;
 }
 
-/** Merge master-derived printers with the seed (seed wins on missing fields). */
+/** Merge master-derived printers with the seed (all nozzle variants exposed). */
 export function loadPrinters(): Printer[] {
   const index = getMasterIndexSync();
   if (!index) return SEED_PRINTERS;
   const derived = buildPrintersFromMaster(index);
-  const byModel = new Map<string, Printer>();
-  for (const p of derived) byModel.set(p.printerModel, p);
+  const byId = new Map<string, Printer>();
+  for (const p of derived) byId.set(p.id, p);
   for (const s of SEED_PRINTERS) {
-    // If the master doesn't know the seed printer, still expose it.
-    if (!byModel.has(s.printerModel)) byModel.set(s.printerModel, s);
+    if (!byId.has(s.id)) byId.set(s.id, s);
   }
-  return Array.from(byModel.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return Array.from(byId.values()).sort(
+    (a, b) => a.displayName.localeCompare(b.displayName) || parseFloat(a.printerVariant) - parseFloat(b.printerVariant),
+  );
+}
+
+/** Unique printer models (grouped) — used by the "modelo" dropdown. */
+export function listPrinterModels(): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of loadPrinters()) {
+    if (!seen.has(p.printerModel)) { seen.add(p.printerModel); out.push(p.printerModel); }
+  }
+  return out;
+}
+
+/** Nozzle diameters available for a given model (from BBL.json machine_list). */
+export function listNozzlesForModel(model: string): string[] {
+  const nozzles = loadPrinters()
+    .filter((p) => p.printerModel === model)
+    .map((p) => p.printerVariant);
+  return Array.from(new Set(nozzles)).sort((a, b) => parseFloat(a) - parseFloat(b));
+}
+
+export function findPrinter(model: string, nozzle: string): Printer | null {
+  return loadPrinters().find((p) => p.printerModel === model && p.printerVariant === nozzle) ?? null;
 }
 
 export function getUpdatedAt(): string | null {
