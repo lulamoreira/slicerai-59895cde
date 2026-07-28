@@ -230,7 +230,7 @@ export function Wizard() {
   const materialsForPrinter = useMemo<MaterialBase[]>(() => {
     if (!state.printer) return [];
     return [...listMaterialsForPrinter(state.printer)].sort((a, b) =>
-      a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base", numeric: true })
+      a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base", numeric: true })
     );
   }, [state.printer, syncedAt]);
 
