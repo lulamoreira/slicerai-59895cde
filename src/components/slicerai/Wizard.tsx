@@ -960,11 +960,7 @@ function StepMaterial({
         )}
 
         {state.material && (
-          <FilamentTempsBlock
-            state={state}
-            material={state.material}
-            onChange={onChange}
-          />
+          <FilamentTempsBlock state={state} material={state.material} onChange={onChange} />
         )}
         {isNylonFamily(state.material) && isOpenPrinter(state.printer) && (
           <Alert variant="destructive">
