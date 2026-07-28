@@ -164,6 +164,14 @@ export function Wizard() {
     if (!stillValid) patch({ material: null });
   }, [materialsForPrinter, state.material, state.printer, patch]);
 
+  // Nylon/PA: sugerir Engineering Plate por padrão (editável no Avançado).
+  useEffect(() => {
+    if (isNylonFamily(state.material) && state.bed === "Textured PEI Plate") {
+      patch({ bed: "Engineering Plate" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.material?.id]);
+
   const runAnalysis = useCallback(async () => {
     if (!state.mesh || !state.printer) return;
     setAnalyzing(true);
@@ -582,29 +590,75 @@ function StepPrinter({
   printers: Printer[]; state: WizardState; bedFits: boolean;
   onChange: (p: Partial<WizardState>) => void;
 }) {
+  const models = useMemo(() => {
+    const seen = new Set<string>();
+    return printers.filter((p) => {
+      if (seen.has(p.printerModel)) return false;
+      seen.add(p.printerModel);
+      return true;
+    }).map((p) => p.printerModel);
+  }, [printers]);
+  const currentModel = state.printer?.printerModel ?? models[0] ?? "";
+  const nozzles = useMemo(
+    () => Array.from(new Set(printers.filter((p) => p.printerModel === currentModel).map((p) => p.printerVariant)))
+      .sort((a, b) => parseFloat(a) - parseFloat(b)),
+    [printers, currentModel],
+  );
+  const currentNozzle = state.printer?.printerVariant ?? "0.4";
+
+  const onModel = (model: string) => {
+    const list = printers.filter((p) => p.printerModel === model);
+    const preferred = list.find((p) => p.printerVariant === currentNozzle) ?? list.find((p) => p.printerVariant === "0.4") ?? list[0];
+    if (preferred) onChange({ printer: preferred });
+  };
+  const onNozzle = (nz: string) => {
+    const p = printers.find((x) => x.printerModel === currentModel && x.printerVariant === nz);
+    if (p) onChange({ printer: p });
+  };
+
+  const nozzleTip =
+    currentNozzle === "0.2" ? "Bico 0.2 — detalhe altíssimo, mas MUITO lento e mais frágil (entope fácil)."
+    : currentNozzle === "0.6" ? "Bico 0.6 — imprime rápido e forte, mas perde detalhes finos."
+    : currentNozzle === "0.8" ? "Bico 0.8 — foco em peças grandes/estruturais; camadas 0.28–0.6mm. Sem detalhe fino."
+    : null;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><PrinterIcon className="w-4 h-4" /> Impressora</CardTitle>
-        <CardDescription>Catálogo local + sincronização com o GitHub da Bambulab.</CardDescription>
+        <CardDescription>Escolha o modelo e o bico. O catálogo é sincronizado do GitHub da Bambulab.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>Modelo</Label>
-          <Select
-            value={state.printer?.id ?? ""}
-            onValueChange={(id) => onChange({ printer: printers.find((p) => p.id === id) ?? null })}
-          >
-            <SelectTrigger><SelectValue placeholder="Selecione a impressora" /></SelectTrigger>
-            <SelectContent>
-              {printers.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.displayName} · {p.bed[0]}×{p.bed[1]}×{p.bed[2]} mm
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Modelo</Label>
+            <Select value={currentModel} onValueChange={onModel}>
+              <SelectTrigger><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Bico (nozzle)</Label>
+            <Select value={currentNozzle} onValueChange={onNozzle}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {nozzles.map((n) => (
+                  <SelectItem key={n} value={n}>{n} mm{n === "0.4" ? " · padrão" : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        {nozzleTip && (
+          <Alert>
+            <Info className="w-4 h-4" />
+            <AlertDescription className="text-xs">{nozzleTip}</AlertDescription>
+          </Alert>
+        )}
         <div className="space-y-2">
           <Label>Placa (curr_bed_type)</Label>
           <Select value={state.bed} onValueChange={(v) => onChange({ bed: v })}>
