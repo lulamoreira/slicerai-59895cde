@@ -380,6 +380,7 @@ function detectType(name: string): { type: string; idBase: string; labelBase: st
 function cleanLabel(name: string, suffix: string): string {
   return name
     .replace(new RegExp(`\\s*${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+    .replace(/\s*@base\s*$/i, "")
     .replace(/^Bambu\s+/i, "")
     .trim();
 }
