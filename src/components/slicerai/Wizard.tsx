@@ -953,9 +953,18 @@ function StepMaterial({
         )}
         {state.material && isNylonFamily(state.material) && (
           <div className="text-xs text-muted-foreground">
-            Temperaturas, vazão e ventilador seguem o preset oficial da Bambu — não sobrescrevemos
-            PA/Nylon.
+            Temperaturas, vazão e ventilador seguem o preset oficial da Bambu quando não editados
+            abaixo — nylon é muito sensível a temperatura, só mexa se o rótulo do seu filamento
+            pedir.
           </div>
+        )}
+
+        {state.material && (
+          <FilamentTempsBlock
+            state={state}
+            material={state.material}
+            onChange={onChange}
+          />
         )}
         {isNylonFamily(state.material) && isOpenPrinter(state.printer) && (
           <Alert variant="destructive">
