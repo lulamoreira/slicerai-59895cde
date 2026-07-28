@@ -90,14 +90,20 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
   );
 }
 
-function CameraSetup({ target }: { target: Vec3 }) {
+function CameraSetup({ target, bed }: { target: Vec3; bed: Vec3 | null }) {
   const { camera } = useThree();
   useEffect(() => {
-    const d = Math.max(...target, 50) * 1.8;
+    const reach = Math.max(
+      target[0], target[1], target[2],
+      bed ? bed[0] : 0,
+      bed ? bed[1] : 0,
+      50,
+    );
+    const d = reach * 1.3;
     camera.position.set(d, -d, d * 0.8);
     camera.up.set(0, 0, 1);
     camera.lookAt(0, 0, target[2] / 2);
-  }, [camera, target]);
+  }, [camera, target, bed]);
   return null;
 }
 
@@ -112,7 +118,7 @@ export function Preview3D(props: PreviewProps) {
         <ambientLight intensity={0.5} />
         <directionalLight position={[100, 100, 200]} intensity={1.2} castShadow />
         <directionalLight position={[-100, -100, 100]} intensity={0.5} />
-        <CameraSetup target={size} />
+        <CameraSetup target={size} bed={bedSize} />
         <Suspense fallback={null}>
           <MeshView {...props} />
         </Suspense>
