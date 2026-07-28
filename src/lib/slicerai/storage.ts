@@ -1,6 +1,7 @@
-import type { HistoryEntry } from "./types";
+import type { HistoryEntry, SpecialPreset, SpecialOverride } from "./types";
 
 const LS_HISTORY = "slicerai.history";
+const LS_SPECIAL_PRESETS = "slicerai.specialPresets";
 
 export function loadHistory(): HistoryEntry[] {
   try {
@@ -17,6 +18,34 @@ export function saveHistory(entry: HistoryEntry) {
 
 export function clearHistory() {
   localStorage.removeItem(LS_HISTORY);
+}
+
+// -------- Special presets (user-defined advanced overrides) --------
+
+export function loadSpecialPresets(): SpecialPreset[] {
+  try {
+    const raw = localStorage.getItem(LS_SPECIAL_PRESETS);
+    return raw ? (JSON.parse(raw) as SpecialPreset[]) : [];
+  } catch { return []; }
+}
+
+export function saveSpecialPreset(name: string, overrides: SpecialOverride[]): SpecialPreset {
+  const all = loadSpecialPresets();
+  const trimmed = name.trim() || `Preset ${all.length + 1}`;
+  const existing = all.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
+  const preset: SpecialPreset = existing
+    ? { ...existing, overrides, createdAt: Date.now() }
+    : { id: crypto.randomUUID(), name: trimmed, overrides, createdAt: Date.now() };
+  const next = existing
+    ? all.map((p) => (p.id === existing.id ? preset : p))
+    : [preset, ...all];
+  localStorage.setItem(LS_SPECIAL_PRESETS, JSON.stringify(next.slice(0, 30)));
+  return preset;
+}
+
+export function deleteSpecialPreset(id: string) {
+  const next = loadSpecialPresets().filter((p) => p.id !== id);
+  localStorage.setItem(LS_SPECIAL_PRESETS, JSON.stringify(next));
 }
 
 // -------- IndexedDB for STL ArrayBuffer storage --------

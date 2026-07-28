@@ -1,4 +1,24 @@
-import type { MaterialBase, Purpose } from "./types";
+import type { MaterialBase, Printer, Purpose } from "./types";
+
+/** PA / Nylon family — needs enclosed printer, hardened nozzle, drying. */
+export function isNylonFamily(mat: MaterialBase | null | undefined): boolean {
+  if (!mat) return false;
+  const t = mat.filamentType.toUpperCase();
+  if (t === "PA" || t === "PA-CF") return true;
+  return /\b(PA6|PAHT|PA12|Nylon)\b/i.test(mat.label) || /\b(PA6|PAHT)\b/i.test(mat.id);
+}
+
+/** Abrasive fibre-reinforced material — requires hardened steel nozzle. */
+export function isAbrasive(mat: MaterialBase | null | undefined): boolean {
+  if (!mat) return false;
+  return /-CF\b|-GF\b|CarbonFiber|GlassFiber/i.test(mat.label) || /-CF\b|-GF\b/i.test(mat.filamentType);
+}
+
+/** Frame-open Bambu printers where PA/Nylon is strongly discouraged. */
+export function isOpenPrinter(p: Printer | null | undefined): boolean {
+  if (!p) return false;
+  return /A1( mini)?$/i.test(p.printerModel) || /P1P$/i.test(p.printerModel);
+}
 
 export interface PurposeProfile {
   layer: number;

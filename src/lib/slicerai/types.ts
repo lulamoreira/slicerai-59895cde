@@ -66,6 +66,18 @@ export interface OrientationResult {
   bboxSize: Vec3;
 }
 
+export interface SpecialOverride {
+  key: string;
+  value: string;
+}
+
+export interface SpecialPreset {
+  id: string;
+  name: string;
+  overrides: SpecialOverride[];
+  createdAt: number;
+}
+
 export interface WizardState {
   mesh: STLMesh | null;
   printer: Printer | null;
@@ -85,6 +97,7 @@ export interface WizardState {
     spacing: string; // e.g. "0.1"
     speed: string;   // e.g. "20"
   };
+  specialOverrides: SpecialOverride[];
 }
 
 export interface HistoryEntry {
