@@ -142,21 +142,25 @@ export function analyzeSupport(
     // Approx span = sqrt(area * 4)
     const span = Math.sqrt(triAreas[i] * 4);
 
-    if (span <= bridgeMax) {
+    // Track flat suspended area regardless of bridge classification — a big
+    // flat panel made of many tiny triangles would otherwise slip through.
+    const isFlat = nz < -0.85;
+    if (isFlat) flatSuspendedArea += triAreas[i];
+
+    if (span <= bridgeMax && !isFlat) {
       faceFlags[i] = 2;
       bridgeArea += triAreas[i];
       continue;
     }
     faceFlags[i] = 1;
     supportArea += triAreas[i];
-    if (nz < -0.85) flatSuspendedArea += triAreas[i];
-    else overhangSteepArea += triAreas[i];
+    if (!isFlat) overhangSteepArea += triAreas[i];
     void ia; void ib; void ic;
   }
 
   const supportPct = totalArea > 0 ? supportArea / totalArea : 0;
-  const hasLargeFlat = flatSuspendedArea > 25; // 25mm² threshold
-  const needsSupport = supportPct > 0.02 || hasLargeFlat;
+  const hasLargeFlat = flatSuspendedArea > 10; // 10mm² threshold — pisos suspensos pequenos já cedem
+  const needsSupport = supportPct > 0.01 || hasLargeFlat;
 
   let suggestedType: "normal" | "tree" | "none" = "none";
   let reason = "Sem overhangs significativos; imprimir sem suporte.";
