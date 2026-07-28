@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import type { MaterialBase, Printer, STLMesh, Vec3, WizardState, SpecialOverride } from "./types";
+import type { MaterialBase, Printer, STLMesh, Vec3, WizardState } from "./types";
 import { findFilamentInherits, findProcessInherits, snapLayerToPreset } from "./catalog";
 import { purposeProfile, supportConfig, isNylonFamily, type SupportConfig } from "./rules";
 import { resolveChain } from "./resolve";
@@ -791,7 +791,13 @@ function buildReport(
 
   L.push("ANTES DE IMPRIMIR — CHECKLIST");
   L.push("-".repeat(48));
-  if (isTechnical) {
+  if (isNylonFamily(material)) {
+    L.push(`• NYLON/PA (${material.filamentType}) — REQUER câmara FECHADA (P1S / X1C / H2D).`);
+    L.push("  A1 e A1 mini são frame ABERTO → risco alto de empeno/delaminação.");
+    L.push("• Secar o filamento 8–12 h a 70–80 °C antes de imprimir e manter em DRY BOX durante toda a impressão.");
+    L.push("• Se o material tiver CF/GF (fibras): use BICO ENDURECIDO (hardened steel) — bico latão desgasta rápido.");
+    L.push(`• Placa recomendada: Engineering Plate (você selecionou "${state.bed}").`);
+  } else if (isTechnical) {
     L.push(`• Secar o filamento (${material.filamentType} absorve umidade → bolhas e stringing).`);
   }
   L.push(`• Conferir se a impressora ativa no Bambu Studio é "${printer.displayName}".`);
