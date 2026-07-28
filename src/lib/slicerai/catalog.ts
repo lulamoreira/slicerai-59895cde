@@ -382,6 +382,17 @@ export function findProcessInherits(printer: Printer, layerMm: number, _bases: s
   );
 }
 
+/** Snap a requested layer height to a value that actually exists for this printer+suffix.
+ *  Bicos maiores usam camadas maiores; presets 0.6/0.8 já ficam na faixa 0.28–0.6mm. */
+export function snapLayerToPreset(printer: Printer, requestedMm: number): number {
+  try {
+    const leaf = findProcessInherits(printer, requestedMm, []);
+    const m = leaf.match(/^(\d+\.\d+)mm/);
+    if (m) return parseFloat(m[1]);
+  } catch { /* ignore */ }
+  return requestedMm;
+}
+
 /** Real filament preset name. When material.id is a full leaf name, use it directly. */
 export function findFilamentInherits(printer: Printer, material: MaterialBase): string {
   const index = getMasterIndexSync();
