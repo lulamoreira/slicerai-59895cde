@@ -25,12 +25,14 @@ import { parseSTL } from "@/lib/slicerai/stl";
 import {
   loadPrinters, OPEN_PRINTERS, getUpdatedAt, silentSync,
   listMaterialsForPrinter, buildMaterialFromName,
+  listPrinterModels, listNozzlesForModel, findPrinter,
 } from "@/lib/slicerai/catalog";
+import { isNylonFamily, isAbrasive, isOpenPrinter } from "@/lib/slicerai/rules";
 import { analyzeAllOrientations, pickBestOrientation, purposeToTreePreference } from "@/lib/slicerai/support";
 import { generate3mfAsync, previewValidation, type ValidationReport } from "@/lib/slicerai/threemf";
-import { loadHistory, saveHistory, putStl, getStl } from "@/lib/slicerai/storage";
+import { loadHistory, saveHistory, putStl, getStl, loadSpecialPresets, saveSpecialPreset, deleteSpecialPreset } from "@/lib/slicerai/storage";
 import type {
-  HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, WizardState,
+  HistoryEntry, MaterialBase, OrientationResult, Printer, Purpose, STLMesh, SpecialOverride, SpecialPreset, WizardState,
 } from "@/lib/slicerai/types";
 
 
@@ -69,6 +71,7 @@ function initialState(): WizardState {
     supportMode: "auto",
     bed: "Textured PEI Plate",
     ironing: { type: undefined, flow: "10%", spacing: "0.1", speed: "20" },
+    specialOverrides: [],
   };
 }
 
