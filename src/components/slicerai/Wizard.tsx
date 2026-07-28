@@ -924,23 +924,7 @@ function StepMaterial({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Cor do filamento (obrigatória)</Label>
-          <div className="flex items-center gap-3">
-            <input
-              type="color"
-              value={state.color}
-              onChange={(e) => onChange({ color: e.target.value })}
-              className="w-14 h-10 rounded border border-border cursor-pointer bg-transparent"
-            />
-            <Input
-              value={state.color}
-              onChange={(e) => onChange({ color: e.target.value })}
-              placeholder="#F5C518"
-              className="font-mono"
-            />
-          </div>
-        </div>
+        {/* Cor do filamento removida — o .3mf usa um cinza neutro por padrão. */}
         {state.material && !isNylonFamily(state.material) && (
           <div className="text-xs text-muted-foreground space-y-1">
             <div>
