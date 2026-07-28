@@ -26,17 +26,27 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
         positions[i] = v.x; positions[i + 1] = v.y; positions[i + 2] = v.z;
       }
     }
-    // settle
-    let minZ = Infinity;
-    for (let i = 2; i < positions.length; i += 3) if (positions[i] < minZ) minZ = positions[i];
-    for (let i = 2; i < positions.length; i += 3) positions[i] -= minZ;
+    // settle to Z=0 and center on XY
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] -= cx;
+      positions[i + 1] -= cy;
+      positions[i + 2] -= minZ;
+    }
 
     // Expand per-face if we have flags to color
     if (faceFlags && faceFlags.length === mesh.indices.length / 3) {
       const triCount = mesh.indices.length / 3;
       const expanded = new Float32Array(triCount * 9);
       const colors = new Float32Array(triCount * 9);
-      const cBase = new THREE.Color(color || "#F5C518");
+      const cBase = new THREE.Color("#9ca3af");
       const cRed = new THREE.Color("#ef4444");
       const cYel = new THREE.Color("#f59e0b");
       for (let i = 0; i < triCount; i++) {
@@ -70,7 +80,7 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
   return (
     <mesh geometry={geom} castShadow receiveShadow>
       <meshStandardMaterial
-        color={useVertexColors ? undefined : color || "#F5C518"}
+        color={useVertexColors ? undefined : "#9ca3af"}
         vertexColors={useVertexColors}
         roughness={0.6}
         metalness={0.05}
@@ -80,14 +90,20 @@ function MeshView({ mesh, rotation, faceFlags, color }: PreviewProps) {
   );
 }
 
-function CameraSetup({ target }: { target: Vec3 }) {
+function CameraSetup({ target, bed }: { target: Vec3; bed: Vec3 | null }) {
   const { camera } = useThree();
   useEffect(() => {
-    const d = Math.max(...target, 50) * 1.8;
+    const reach = Math.max(
+      target[0], target[1], target[2],
+      bed ? bed[0] : 0,
+      bed ? bed[1] : 0,
+      50,
+    );
+    const d = reach * 1.3;
     camera.position.set(d, -d, d * 0.8);
     camera.up.set(0, 0, 1);
     camera.lookAt(0, 0, target[2] / 2);
-  }, [camera, target]);
+  }, [camera, target, bed]);
   return null;
 }
 
@@ -102,7 +118,7 @@ export function Preview3D(props: PreviewProps) {
         <ambientLight intensity={0.5} />
         <directionalLight position={[100, 100, 200]} intensity={1.2} castShadow />
         <directionalLight position={[-100, -100, 100]} intensity={0.5} />
-        <CameraSetup target={size} />
+        <CameraSetup target={size} bed={bedSize} />
         <Suspense fallback={null}>
           <MeshView {...props} />
         </Suspense>
@@ -138,7 +154,7 @@ export function LegendChip({ analysis }: { analysis: SupportAnalysis | null }) {
     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
       <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#ef4444]" /> Precisa suporte</span>
       <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#f59e0b]" /> Ponte ok</span>
-      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#F5C518]" /> Sem overhang</span>
+      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#9ca3af]" /> Sem overhang</span>
     </div>
   );
 }
