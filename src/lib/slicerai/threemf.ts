@@ -248,6 +248,32 @@ async function assembleCfg(
   copy(processCfg);
   copy(filamentCfg);
 
+  // ---- Normalize filament arrays to length 1 (single-filament print). ----
+  // Base @base presets often ship arrays sized for AMS/multi (len ≥ 2), which
+  // corrupts the slicer's per-slot lookup. Force every filament_* array (and
+  // known filament-domain keys) to keep only slot 0.
+  const FILAMENT_SCALAR_SNIFF = (k: string) =>
+    k.startsWith("filament_") ||
+    k.startsWith("nozzle_temperature") ||
+    k.startsWith("hot_plate_temp") ||
+    k.startsWith("cool_plate_temp") ||
+    k.startsWith("eng_plate_temp") ||
+    k.startsWith("textured_plate_temp") ||
+    k.startsWith("smooth_plate_temp") ||
+    k.startsWith("fan_") ||
+    k === "close_fan_the_first_x_layers" ||
+    k === "chamber_temperature" ||
+    k === "slow_down_layer_time" ||
+    k === "slow_down_min_speed" ||
+    k === "additional_cooling_fan_speed" ||
+    k === "overhang_fan_speed" ||
+    k === "overhang_fan_threshold";
+  for (const [k, v] of Object.entries(cfg)) {
+    if (Array.isArray(v) && v.length > 1 && FILAMENT_SCALAR_SNIFF(k)) {
+      cfg[k] = [v[0]];
+    }
+  }
+
   // 1ª camada = pelo menos a camada corrente (bico grande não imprime 0.2 na 1ª).
   const initialLayer = Math.max(parseFloat(layerStr), 0.2).toFixed(2);
 
@@ -298,22 +324,22 @@ async function assembleCfg(
       : material.filamentType;
 
   const isNylon = isNylonFamily(material);
+  const bedTempKey = BED_TEMP_KEY[bed] ?? "hot_plate_temp";
+  const bedTempInitKey = `${bedTempKey}_initial_layer`;
 
   const filamentOverrides: Record<string, string[]> = {
     filament_type: [resolvedType],
     filament_diameter: ["1.75"],
     filament_is_support: ["0"],
   };
-  // PA/Nylon: preserve preset temps/flow/fan/retraction — Bambu já calibrou.
-  // Exceção: se o usuário editou temperaturas (rótulo do filamento de terceiros),
-  // aplicamos os valores DELE mesmo em nylon (feito abaixo, no bloco de user temps).
+  // PA/Nylon: preserve preset temps/flow/fan/retraction (Bambu já calibrou),
+  // MAS ainda forçamos a temp da placa selecionada — o base @base pode não
+  // definir eng_plate_temp corretamente para a família PA.
   if (!isNylon) {
     filamentOverrides.nozzle_temperature = [String(material.nozzle)];
     filamentOverrides.nozzle_temperature_initial_layer = [
       String(material.nozzleInitial ?? material.nozzle),
     ];
-    filamentOverrides.hot_plate_temp = [String(material.bed)];
-    filamentOverrides.hot_plate_temp_initial_layer = [String(material.bed)];
     filamentOverrides.filament_flow_ratio = [String(material.flow)];
     filamentOverrides.fan_min_speed = [String(material.fanMin)];
     filamentOverrides.fan_max_speed = [String(material.fanMax)];
@@ -325,14 +351,20 @@ async function assembleCfg(
     }
   }
 
+  // Bed temp — ALWAYS write both the plate-specific key AND hot_plate_temp
+  // (Bambu Studio reads the plate-specific one when curr_bed_type is set;
+  // mirroring hot_plate_temp keeps the settings coherent for any viewer).
+  const defaultBedTemp = String(material.bed);
+  filamentOverrides[bedTempKey] = [defaultBedTemp];
+  filamentOverrides[bedTempInitKey] = [defaultBedTemp];
+  filamentOverrides.hot_plate_temp = [defaultBedTemp];
+  filamentOverrides.hot_plate_temp_initial_layer = [defaultBedTemp];
+
   // ---- User-editable filament temps (label of 3rd-party spool) ----
   // Applied AFTER the isNylon branch so it works for every material family.
-  const bedTempKey = BED_TEMP_KEY[bed] ?? "hot_plate_temp";
-  const bedTempInitKey = `${bedTempKey}_initial_layer`;
   const userTemps = state.filamentTemps ?? {};
   if (typeof userTemps.nozzle === "number") {
     filamentOverrides.nozzle_temperature = [String(userTemps.nozzle)];
-    // Se o usuário só informou nozzle (sem 1ª camada), usamos o mesmo valor.
     if (typeof userTemps.nozzleInitial !== "number") {
       filamentOverrides.nozzle_temperature_initial_layer = [String(userTemps.nozzle)];
     }
@@ -341,11 +373,11 @@ async function assembleCfg(
     filamentOverrides.nozzle_temperature_initial_layer = [String(userTemps.nozzleInitial)];
   }
   if (typeof userTemps.bed === "number") {
-    filamentOverrides[bedTempKey] = [String(userTemps.bed)];
-    filamentOverrides[bedTempInitKey] = [String(userTemps.bed)];
-    // Sempre espelhar em hot_plate_temp para máxima compatibilidade.
-    filamentOverrides.hot_plate_temp = [String(userTemps.bed)];
-    filamentOverrides.hot_plate_temp_initial_layer = [String(userTemps.bed)];
+    const b = String(userTemps.bed);
+    filamentOverrides[bedTempKey] = [b];
+    filamentOverrides[bedTempInitKey] = [b];
+    filamentOverrides.hot_plate_temp = [b];
+    filamentOverrides.hot_plate_temp_initial_layer = [b];
   }
 
   for (const [k, v] of Object.entries(filamentOverrides)) cfg[k] = v;
