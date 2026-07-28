@@ -229,7 +229,9 @@ export function Wizard() {
   // Dynamic materials list, derived from the master index for the selected printer.
   const materialsForPrinter = useMemo<MaterialBase[]>(() => {
     if (!state.printer) return [];
-    return listMaterialsForPrinter(state.printer);
+    return [...listMaterialsForPrinter(state.printer)].sort((a, b) =>
+      a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base", numeric: true })
+    );
   }, [state.printer, syncedAt]);
 
   // If the selected material doesn't fit the new printer, clear it.
