@@ -47,9 +47,6 @@ import {
   silentSync,
   listMaterialsForPrinter,
   buildMaterialFromName,
-  listPrinterModels,
-  listNozzlesForModel,
-  findPrinter,
 } from "@/lib/slicerai/catalog";
 import { isNylonFamily, isAbrasive, isOpenPrinter } from "@/lib/slicerai/rules";
 import {
