@@ -241,10 +241,13 @@ export function Wizard() {
   }, [materialsForPrinter, state.material, state.printer, patch]);
 
   // Nylon/PA: sugerir Engineering Plate por padrão (editável no Avançado).
+  // Ao trocar de material, zera as temperaturas customizadas do usuário.
   useEffect(() => {
+    const patchObj: Partial<WizardState> = { filamentTemps: {} };
     if (isNylonFamily(state.material) && state.bed === "Textured PEI Plate") {
-      patch({ bed: "Engineering Plate" });
+      patchObj.bed = "Engineering Plate";
     }
+    patch(patchObj);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.material?.id]);
 
