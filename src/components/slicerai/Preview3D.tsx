@@ -154,7 +154,7 @@ export function LegendChip({ analysis }: { analysis: SupportAnalysis | null }) {
     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
       <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#ef4444]" /> Precisa suporte</span>
       <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#f59e0b]" /> Ponte ok</span>
-      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#F5C518]" /> Sem overhang</span>
+      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-[#9ca3af]" /> Sem overhang</span>
     </div>
   );
 }
