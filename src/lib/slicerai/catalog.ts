@@ -380,6 +380,7 @@ function detectType(name: string): { type: string; idBase: string; labelBase: st
 function cleanLabel(name: string, suffix: string): string {
   return name
     .replace(new RegExp(`\\s*${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`), "")
+    .replace(/\s*@base\s*$/i, "")
     .replace(/^Bambu\s+/i, "")
     .trim();
 }
@@ -434,15 +435,29 @@ export function listMaterialsForPrinter(printer: Printer): MaterialBase[] {
   if (!index) return [];
   const suffix = resolveEffectiveSuffix(printer, index.filament_list);
   const out = new Map<string, MaterialBase>();
+  const familiesPresent = new Set<string>();
   for (const f of index.filament_list) {
     if (!f?.name) continue;
     if (isBaseTemplate(f.name)) continue;
     if (!f.name.endsWith(` ${suffix}`)) continue;
     const mat = buildMaterialFromName(f.name, suffix);
+    familiesPresent.add(mat.filamentType);
     // Prefer non-HF over HF when same label (rare collision).
     const existing = out.get(mat.label);
     if (!existing || (existing.highFlow && !mat.highFlow)) out.set(mat.label, mat);
   }
+
+  // Fallback: include machine-agnostic "Generic <TYPE> @base" for families that
+  // don't have any printer-specific preset — so any pure material stays reachable.
+  for (const f of index.filament_list) {
+    if (!f?.name) continue;
+    if (!/^Generic\s.+\s@base$/i.test(f.name)) continue;
+    const mat = buildMaterialFromName(f.name, suffix);
+    if (familiesPresent.has(mat.filamentType)) continue;
+    if (out.has(mat.label)) continue;
+    out.set(mat.label, mat);
+  }
+
   return Array.from(out.values()).sort((a, b) =>
     materialSortKey(a).localeCompare(materialSortKey(b)),
   );
