@@ -312,6 +312,12 @@ async function assembleCfg(
     tree_support_branch_diameter: "2",
     tree_support_tip_diameter: "0.4",
   };
+  // PA/Nylon anti-warp: brim outer_only por padrão para segurar cantos.
+  if (isNylonFamily(material)) {
+    processOverrides.brim_type = "outer_only";
+    processOverrides.brim_width = "10";
+    processOverrides.brim_object_gap = "0.1";
+  }
   for (const [k, v] of Object.entries(processOverrides)) cfg[k] = v;
 
   // ----- Filament overrides (arrays of 1 string) -----
