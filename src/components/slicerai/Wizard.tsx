@@ -1881,3 +1881,111 @@ function SpecialSettingsBlock({
     </Collapsible>
   );
 }
+
+// -------- Editable filament temperatures (3rd-party spool label) --------
+
+function FilamentTempsBlock({
+  state,
+  material,
+  onChange,
+}: {
+  state: WizardState;
+  material: MaterialBase;
+  onChange: (p: Partial<WizardState>) => void;
+}) {
+  const temps = state.filamentTemps ?? {};
+  const defNozzle = material.nozzle;
+  const defNozzleInit = material.nozzleInitial ?? material.nozzle;
+  const defBed = material.bed;
+
+  const patchTemps = (patch: Partial<NonNullable<WizardState["filamentTemps"]>>) => {
+    const next = { ...temps, ...patch };
+    // Clean up undefined so isNylon logic can tell "user didn't touch this".
+    (Object.keys(next) as Array<keyof typeof next>).forEach((k) => {
+      if (next[k] === undefined || Number.isNaN(next[k] as number)) delete next[k];
+    });
+    onChange({ filamentTemps: next });
+  };
+  const parseNum = (v: string): number | undefined => {
+    const t = v.trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const reset = () => onChange({ filamentTemps: {} });
+
+  const nozzleVal = temps.nozzle ?? "";
+  const nozzleInitVal = temps.nozzleInitial ?? "";
+  const bedVal = temps.bed ?? "";
+  const edited =
+    typeof temps.nozzle === "number" ||
+    typeof temps.nozzleInitial === "number" ||
+    typeof temps.bed === "number";
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/30 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-medium flex items-center gap-2">
+          Temperaturas do filamento
+          {edited && <Badge className="text-[10px]">editado</Badge>}
+        </div>
+        {edited && (
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={reset}>
+            Usar do preset
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Confira as temperaturas no rótulo do seu filamento — fabricantes diferentes pedem valores
+        diferentes. Deixe em branco para usar o valor do preset oficial da Bambu.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Bico (°C)</Label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={150}
+            max={400}
+            placeholder={String(defNozzle)}
+            value={nozzleVal === "" ? "" : String(nozzleVal)}
+            onChange={(e) => patchTemps({ nozzle: parseNum(e.target.value) })}
+            className="h-9"
+          />
+          <div className="text-[10px] text-muted-foreground">preset: {defNozzle}°C</div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Bico 1ª camada (°C)</Label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={150}
+            max={400}
+            placeholder={String(defNozzleInit)}
+            value={nozzleInitVal === "" ? "" : String(nozzleInitVal)}
+            onChange={(e) => patchTemps({ nozzleInitial: parseNum(e.target.value) })}
+            className="h-9"
+          />
+          <div className="text-[10px] text-muted-foreground">preset: {defNozzleInit}°C</div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Mesa (°C)</Label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={150}
+            placeholder={String(defBed)}
+            value={bedVal === "" ? "" : String(bedVal)}
+            onChange={(e) => patchTemps({ bed: parseNum(e.target.value) })}
+            className="h-9"
+          />
+          <div className="text-[10px] text-muted-foreground">
+            placa: {state.bed} · preset {defBed}°C
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
