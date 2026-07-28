@@ -147,6 +147,15 @@ const VALID_BEDS = new Set([
   "Smooth PEI Plate",
 ]);
 
+/** curr_bed_type → Bambu bed-temp key (subsequent layers). Initial layer is `${key}_initial_layer`. */
+const BED_TEMP_KEY: Record<string, string> = {
+  "Cool Plate": "cool_plate_temp",
+  "Engineering Plate": "eng_plate_temp",
+  "High Temp Plate": "hot_plate_temp",
+  "Textured PEI Plate": "textured_plate_temp",
+  "Smooth PEI Plate": "smooth_plate_temp",
+};
+
 /** Meta keys that must NOT appear in project_settings.config. */
 const META_STRIP = new Set([
   "type",
