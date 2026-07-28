@@ -96,6 +96,17 @@ export interface WizardState {
     speed: string; // e.g. "20"
   };
   specialOverrides: SpecialOverride[];
+  // Per-material user overrides for filament temperatures (label of the spool).
+  // Undefined fields fall back to the resolved Bambu preset.
+  // For future multi-filament runs, this maps to slot 0; slots 1..N will be added
+  // alongside the multicolor feature (one FilamentTempOverrides per slot).
+  filamentTemps?: FilamentTempOverrides;
+}
+
+export interface FilamentTempOverrides {
+  nozzle?: number; // nozzle_temperature (subsequent layers)
+  nozzleInitial?: number; // nozzle_temperature_initial_layer
+  bed?: number; // temp for the currently selected curr_bed_type
 }
 
 export interface HistoryEntry {
